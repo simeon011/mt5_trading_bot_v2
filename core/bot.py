@@ -99,8 +99,8 @@ class TradingBot:
                     logger.info(f"SKIP {symbol}: {reason}")
                     continue
 
-                if signal.risk_reward < 1.8:
-                    logger.info(f"SKIP {symbol}: R:R={signal.risk_reward:.1f} < 1.8")
+                if signal.risk_reward < 1.5:
+                    logger.info(f"SKIP {symbol}: R:R={signal.risk_reward:.1f} < 1.5")
                     continue
 
                 sl_distance = abs(signal.entry_price - signal.stop_loss)

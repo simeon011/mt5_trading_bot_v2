@@ -99,6 +99,31 @@ class SignalEngine:
         close = df_primary["Close"]
         current_price = float(close.iloc[-1])
         pip = get_pip(symbol)
+        if s.ATR_FILTER_ENABLED:
+            atr_series = ind.atr(df_primary, s.ATR_PERIOD)
+            current_atr = float(atr_series.iloc[-1])
+            avg_atr = float(atr_series.tail(s.ATR_AVERAGE_PERIOD).mean())
+
+            if avg_atr > 0:
+                atr_ratio = current_atr / avg_atr
+
+                if atr_ratio < s.ATR_MIN_MULTIPLIER:
+                    logger.info(f"{symbol} SKIP: ATR твърде нисък ({atr_ratio:.2f}x) — пазарът спи")
+                    return TradeSignal(
+                        symbol=symbol, direction="NEUTRAL", score=0,
+                        confidence=0, entry_price=current_price,
+                        stop_loss=current_price, take_profit=current_price,
+                        risk_reward=0, reasoning=f"ATR too low ({atr_ratio:.2f}x avg)"
+                    )
+
+                if atr_ratio > s.ATR_MAX_MULTIPLIER:
+                    logger.info(f"{symbol} SKIP: ATR твърде висок ({atr_ratio:.2f}x) — пазарът е луд")
+                    return TradeSignal(
+                        symbol=symbol, direction="NEUTRAL", score=0,
+                        confidence=0, entry_price=current_price,
+                        stop_loss=current_price, take_profit=current_price,
+                        risk_reward=0, reasoning=f"ATR too high ({atr_ratio:.2f}x avg)"
+                    )
 
         # Adaptive пипове спрямо баланса
         if s.USE_ADAPTIVE_PIPS:

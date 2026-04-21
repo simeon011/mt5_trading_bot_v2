@@ -11,9 +11,9 @@ from typing import List
 class Settings:
 
     # ── MT5 Връзка ──────────────────────────────────────────
-    MT5_LOGIN: int = 0
-    MT5_PASSWORD: str = ""
-    MT5_SERVER: str = ""
+    MT5_LOGIN: int = 25080519
+    MT5_PASSWORD: str = "!g&H2rUT"
+    MT5_SERVER: str = "VantageInternational-Demo"
     MT5_PATH: str = r"C:\Program Files\MetaTrader 5\terminal64.exe"
 
     # ── Символи ─────────────────────────────────────────────
@@ -67,6 +67,12 @@ class Settings:
     MA_SLOW: int = 21
     MA_TREND: int = 50               # По-кратък тренд за M5
     ATR_PERIOD: int = 7
+    # ── ATR Volatility Filter ────────────────────────────────
+    # Ботът НЕ трейдва ако ATR е извън тези граници
+    ATR_FILTER_ENABLED: bool = True
+    ATR_MIN_MULTIPLIER: float = 0.5  # Пазарът е твърде тих (< 0.5x средния ATR)
+    ATR_MAX_MULTIPLIER: float = 3.0  # Пазарът е твърде луд  (> 3x средния ATR)
+    ATR_AVERAGE_PERIOD: int = 20  # Средно ATR за последните 20 свещи
 
     # ── Order Blocks ─────────────────────────────────────────
     OB_LOOKBACK: int = 20
@@ -98,9 +104,9 @@ def get_adaptive_pips(balance: float) -> dict:
     Колкото повече пари, толкова по-широки цели.
     """
     if balance < 100:
-        return {"tp": 3, "sl": 2, "label": "micro (<$100)"}
+        return {"tp": 12, "sl": 6, "label": "micro (<$100)"}
     elif balance < 500:
-        return {"tp": 5, "sl": 3, "label": "small (<$500)"}
+        return {"tp": 15, "sl": 8, "label": "small (<$500)"}
     elif balance < 2000:
         return {"tp": 8, "sl": 5, "label": "medium (<$2K)"}
     elif balance < 10000:

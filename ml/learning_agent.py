@@ -135,8 +135,11 @@ class LearningAgent:
             logger.error("sklearn не е инсталиран. pip install scikit-learn")
             return {}
 
+        # X = np.array([t.to_feature_vector() for t in self.trade_history])
+        # y = np.array([1 if t.outcome == "WIN" else 0 for t in self.trade_history])
         X = np.array([t.to_feature_vector() for t in self.trade_history])
-        y = np.array([1 if t.outcome == "WIN" else 0 for t in self.trade_history])
+        # Новият вариант:
+        y = np.array([1 if (t.outcome == "WIN" or t.profit_pct > -0.02) else 0 for t in self.trade_history])
 
         if len(np.unique(y)) < 2:
             logger.warning("Нужни са и WIN и LOSS сделки за обучение.")

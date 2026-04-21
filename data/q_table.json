@@ -1,0 +1,26 @@
+{
+  "high_bull_london": {
+    "value": -0.0006281288669186583,
+    "count": 1
+  },
+  "low_bear_ny": {
+    "value": -0.00729869860292225,
+    "count": 30
+  },
+  "mid_bear_ny": {
+    "value": -0.0038484649008769713,
+    "count": 5
+  },
+  "mid_bull_ny": {
+    "value": -0.004992745242849101,
+    "count": 14
+  },
+  "high_bull_ny": {
+    "value": 0.010053479617822485,
+    "count": 15
+  },
+  "high_bear_ny": {
+    "value": -0.0011232014331905016,
+    "count": 6
+  }
+}
