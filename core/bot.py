@@ -159,19 +159,32 @@ class TradingBot:
     def _manage_open_positions(self, positions, account):
         from strategies.indicators import TechnicalIndicators
         ind = TechnicalIndicators()
+
         for pos in positions:
             try:
-                df = self.mt5.get_candles(pos["symbol"], self.settings.PRIMARY_TF, 50)
-                if df is None:
+                symbol = pos["symbol"]
+                df = self.mt5.get_candles(symbol, self.settings.PRIMARY_TF, 50)
+                if df is None or df.empty:
                     continue
                 atr = ind.atr(df).iloc[-1]
                 current_price = df["Close"].iloc[-1]
+                # --- ТУК СЛАГАШ НОВИЯ КОД ---
+                # 1. Изчисляваме разстоянието до целта
+                target_pips = abs(pos["tp"] - pos["price_open"])
+                current_pips = abs(current_price - pos["price_open"])
+                # 2. Проверяваме дали сме изминали поне 50% от пътя до TP
+                # Ако не сме - прескачаме местенето на стопа (continue)
+                if current_pips < (target_pips * 0.4):
+                    continue
+                    # ---------------------------
+                # Едва ако сме минали 50%, изпълняваме долния код:
                 new_sl = self.risk.calculate_trailing_stop(pos, current_price, atr)
                 if new_sl and self.mode == "live":
                     if self.mt5.modify_sl(pos["ticket"], new_sl):
-                        logger.info(f"TrailingStop {pos['symbol']}: {pos['sl']:.5f} -> {new_sl:.5f}")
+                        logger.info(f"✅ TrailingStop {symbol}: {pos['sl']:.5f} -> {new_sl:.5f}")
+
             except Exception as e:
-                logger.debug(f"Trailing stop грешка: {e}")
+                logger.debug(f"Грешка при управление на позиция {pos.get('symbol')}: {e}")
 
     def _check_closed_trades(self, current_positions):
         current_tickets = {p["ticket"] for p in current_positions}

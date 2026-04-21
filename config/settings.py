@@ -46,7 +46,7 @@ class Settings:
 
     # ── Риск Management ──────────────────────────────────────
     RISK_PERCENT: float = 0.5        # 0.5% на сделка (скалпинг = по-малко)
-    MAX_DAILY_LOSS_PERCENT: float = 3.0
+    MAX_DAILY_LOSS_PERCENT: float = 10.0
     MAX_OPEN_TRADES: int = 10        # Scalper отваря повече едновременно
     MAX_TRADES_PER_SYMBOL: int = 2   # До 2 позиции на символ
     MAX_TRADES_PER_HOUR: int = 20    # Hard limit за час
