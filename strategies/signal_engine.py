@@ -20,30 +20,14 @@ logger = logging.getLogger("ScalperEngine")
 # Обновени правилни стойности за всички символи
 # ═══════════════════════════════════════════════════════════════
 PIP_SIZE = {
-    # Forex — 4 decimal places
-    "EURUSD": 0.0001, "EURUSD+": 0.0001, "EURUSDm": 0.0001,
-    "GBPUSD": 0.0001, "GBPUSD+": 0.0001, "GBPUSDm": 0.0001,
-    "USDJPY": 0.01,   "USDJPY+": 0.01,   "USDJPYm": 0.01,
-    "USDCHF": 0.0001, "USDCHF+": 0.0001, "USDCHFm": 0.0001,
-    "AUDUSD": 0.0001, "AUDUSD+": 0.0001, "AUDUSDm": 0.0001,
-
-    # Metals
-    "XAUUSD": 0.1,    "XAUUSD+": 0.1,    "XAUUSDm": 0.1,
-    "XAGUSD": 0.01,   "XAGUSD+": 0.01,
-
-    # Indices — различни pip размери
-    "NAS100": 1.0,    "NAS100m": 1.0,    "NAS100+": 1.0,
-    "US500":  0.1,    "US500m":  0.1,    "SP500":   0.1,
-    "GER40":  1.0,    "GER40m":  1.0,    "GER40+":  1.0,
-    "UK100":  1.0,    "UK100m":  1.0,    "UK100+":  1.0,
-    "US30":   1.0,    "US30m":   1.0,    "US30+":   1.0,
-
-    # ✅ НОВО: JPN225 PIP SIZE
-    # JPN225ft ще използва 0.01 (както USDJPY) или 1.0
-    # За Vantage, JPN225 е с индекс точки, не пипа
-    # Правилната стойност е 1.0 (брой точки)
-    "JPN225": 1.0,    "JPN225m": 1.0,    "JPN225ft": 1.0,
-    "JPN225+": 1.0,
+    # Forex
+    "EURUSD": 0.0001, "GBPUSD": 0.0001, "USDJPY": 0.01,
+    "USDCHF": 0.0001, "AUDUSD": 0.0001, "NZDUSD": 0.0001, # Добавен NZDUSD
+    "USDCAD": 0.0001, "EURGBP": 0.0001, "EURJPY": 0.01,   # Добавени USDCAD, EURGBP, EURJPY
+    # Metals & Indices
+    "XAUUSD": 0.1,    "XAGUSD": 0.01,   "NAS100": 1.0,
+    "US500":  0.1,    "SP500":  0.1,    "GER40":  1.0,
+    "UK100":  1.0,    "US30":   1.0,    "JPN225": 1.0
 }
 
 def get_pip(symbol: str) -> float:

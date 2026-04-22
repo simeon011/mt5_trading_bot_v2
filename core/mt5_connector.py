@@ -274,19 +274,32 @@ class MT5Connector:
 
     def _simulate_candles(self, symbol: str, count: int) -> pd.DataFrame:
         """Генерира симулирани свещи за тестване без MT5."""
-        np.random.seed(hash(symbol) % 2**31)
+        np.random.seed(hash(symbol) % 2 ** 31)
         dates = pd.date_range(end=datetime.now(), periods=count, freq="1h")
-        base = {"XAUUSD": 2000, "EURUSD": 1.08, "GBPUSD": 1.27,
-                "USDJPY": 149.0, "US500": 4800, "SP500": 4800, "GER40": 17000,
-                "NAS100": 17500, "JPN225": 27000}
-        price = base.get(symbol, 100.0)
+
+        # ТУК ТРЯБВА ДА СА РЕАЛНИТЕ ЦЕНИ, А НЕ ПИПОВЕТЕ
+        base = {
+            "EURUSD": 1.0850, "GBPUSD": 1.2540, "USDJPY": 155.0,
+            "USDCHF": 0.9050, "AUDUSD": 0.6500, "USDCAD": 1.3650,
+            "NZDUSD": 0.5950, "EURJPY": 168.00, "EURGBP": 0.8550,
+            "XAUUSD": 2350.0, "NAS100": 18000.0, "SP500": 5100.0
+        }
+
+        # Вземаме чистата цена без знаци като +
+        clean_symbol = symbol.replace("+", "").upper()
+        price = base.get(clean_symbol, 100.0)
+
         closes = [price]
         for _ in range(count - 1):
+            # Генерираме движение
             closes.append(closes[-1] * (1 + np.random.normal(0, 0.001)))
+
         closes = np.array(closes)
         highs = closes * (1 + np.abs(np.random.normal(0, 0.0005, count)))
         lows = closes * (1 - np.abs(np.random.normal(0, 0.0005, count)))
         opens = np.roll(closes, 1)
+        opens[0] = closes[0] * 0.999  # Оправяме първата свещ
+
         volumes = np.random.randint(1000, 50000, count).astype(float)
         return pd.DataFrame({"Open": opens, "High": highs, "Low": lows,
-                              "Close": closes, "Volume": volumes}, index=dates)
+                             "Close": closes, "Volume": volumes}, index=dates)

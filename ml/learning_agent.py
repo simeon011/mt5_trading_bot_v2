@@ -120,7 +120,7 @@ class LearningAgent:
         if n >= self.s.ML_MIN_TRADES_TO_TRAIN:
             if (n - self.last_retrain_count) >= self.s.ML_RETRAIN_INTERVAL:
                 logger.info(f"{'='*60}")
-                logger.info(f"🔄 ПРЕОБУЧАВАНЕ НА ML МОДЕЛ")
+                logger.self_study(f"🔄 ПРЕОБУЧАВАНЕ НА ML МОДЕЛ")
                 logger.info(f"   Сделки за обучение: {n}")
                 logger.info(f"   Последно преобучаване беше при: {self.last_retrain_count}")
                 logger.info(f"   Разлика: {n - self.last_retrain_count} сделки")
@@ -130,7 +130,7 @@ class LearningAgent:
                 self.last_retrain_count = n
 
                 if metrics:
-                    logger.info(f"✅ МОДЕЛ ПРЕОБУЧЕН УСПЕШНО")
+                    logger.new_model(f"✅ МОДЕЛ ПРЕОБУЧЕН УСПЕШНО")
                     logger.info(f"   Accuracy: {metrics.get('accuracy', 0):.1%}")
                     logger.info(f"   Win Rate: {metrics.get('win_rate', 0):.1%}")
                     logger.info(f"   Топ фактори: {list(metrics.get('feature_importance', {}).items())[:3]}")

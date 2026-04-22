@@ -42,7 +42,7 @@ class TradingBot:
 
     def run_cycle(self):
         self._cycle_count += 1
-        logger.info(f"Цикъл #{self._cycle_count} [{datetime.now().strftime('%H:%M:%S')}]")
+        logger.cycle(f"–––––––––––––––Цикъл #{self._cycle_count} [{datetime.now().strftime('%H:%M:%S')}]–––––––––––––––")
 
         account = self.mt5.get_account_info()
         open_positions = self.mt5.get_open_positions()

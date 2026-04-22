@@ -19,10 +19,14 @@ class Settings:
 
     # ── Символи ─────────────────────────────────────────────
     SYMBOLS: List[str] = field(default_factory=lambda: [
-        # "XAUUSD+",  # Gold
+        "XAUUSD+",  # Gold
         "EURUSD+",  # Forex
         "GBPUSD+",  # Forex
         "USDJPY+",  # Forex
+        "NZDUSD+",  # Forex
+        "EURJPY+",  # Forex
+        "EURGBP+",  # Forex
+        "USDCAD+",  # Forex
         # "SP500",  # S&P 500 Index
         # "JPN225ft",  # JPN index
         # "NAS100",  # NASDAQ Index

@@ -20,6 +20,33 @@ from datetime import datetime
 from core.bot import TradingBot
 from config.settings import Settings
 
+CYCLE_LEVEL = 21
+STUDY_LEVEL = 22
+MODEL_LEVEL = 23
+
+# 2. Казваме на Python какъв текст да изписва в скобите [ ]
+logging.addLevelName(CYCLE_LEVEL, "CYCLE")
+logging.addLevelName(STUDY_LEVEL, "SELF-STUDYING")
+logging.addLevelName(MODEL_LEVEL, "CREATE NEW MODEL")
+
+# 3. Създаваме функциите, за да можеш да ги викаш лесно с logger.neshto()
+def log_cycle(self, message, *args, **kws):
+    if self.isEnabledFor(CYCLE_LEVEL):
+        self._log(CYCLE_LEVEL, message, args, **kws)
+
+def log_self_study(self, message, *args, **kws):
+    if self.isEnabledFor(STUDY_LEVEL):
+        self._log(STUDY_LEVEL, message, args, **kws)
+
+def log_new_model(self, message, *args, **kws):
+    if self.isEnabledFor(MODEL_LEVEL):
+        self._log(MODEL_LEVEL, message, args, **kws)
+
+# 4. Прикачваме ги към главния Logger клас
+logging.Logger.cycle = log_cycle
+logging.Logger.self_study = log_self_study
+logging.Logger.new_model = log_new_model
+
 # Fix Windows Unicode (Bulgarian + emoji)
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -69,6 +96,7 @@ def main():
         except KeyboardInterrupt:
             logger.info("🛑 Бот спрян от потребителя.")
             bot.shutdown()
+
 
 
 if __name__ == "__main__":
