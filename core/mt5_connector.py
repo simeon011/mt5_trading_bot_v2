@@ -232,7 +232,7 @@ class MT5Connector:
         result = mt5.order_send(request)
         return result.retcode == mt5.TRADE_RETCODE_DONE
 
-    def modify_sl(self, ticket: int, new_sl: float) -> bool:
+    def modify_sl(self, ticket: int, new_sl: float, current_tp: float) -> bool:
         """Модифицира Stop Loss (за trailing stop)."""
         if self._mt5 is None:
             return True
@@ -240,7 +240,8 @@ class MT5Connector:
         request = {
             "action": mt5.TRADE_ACTION_SLTP,
             "position": ticket,
-            "sl": new_sl
+            "sl": new_sl,
+            "tp": current_tp
         }
         result = mt5.order_send(request)
         return result.retcode == mt5.TRADE_RETCODE_DONE

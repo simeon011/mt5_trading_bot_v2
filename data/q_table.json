@@ -26,5 +26,9 @@
   "mid_bear_london": {
     "value": 0.014322627031192687,
     "count": 22
+  },
+  "high_bear_ny": {
+    "value": -0.006401666140307694,
+    "count": 1
   }
 }

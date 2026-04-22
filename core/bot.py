@@ -179,7 +179,7 @@ class TradingBot:
                 current_pips = abs(current_price - pos["price_open"])
 
                 # Проверяваме дали сме изминали поне 40% от пътя до TP
-                if current_pips >= (target_pips * 0.4):
+                if current_pips >= (target_pips * 0.38):
                     # Сме изминали 40%! Местим SL на entry (break-even)
                     new_sl = pos["price_open"]
 
@@ -188,13 +188,13 @@ class TradingBot:
                         # За BUY позиция: нов SL трябва да е > от текущия
                         if new_sl > pos["sl"] + (atr * 0.1):
                             if self.mode == "live":
-                                if self.mt5.modify_sl(pos["ticket"], new_sl):
+                                if self.mt5.modify_sl(pos["ticket"], new_sl, pos["tp"]):
                                     logger.info(f"✅ TrailingStop {symbol}: {pos['sl']:.5f} -> {new_sl:.5f} (Entry)")
                     else:
                         # За SELL позиция: нов SL трябва да е < от текущия
                         if new_sl < pos["sl"] - (atr * 0.1):
                             if self.mode == "live":
-                                if self.mt5.modify_sl(pos["ticket"], new_sl):
+                                if self.mt5.modify_sl(pos["ticket"], new_sl, pos["tp"]):
                                     logger.info(f"✅ TrailingStop {symbol}: {pos['sl']:.5f} -> {new_sl:.5f} (Entry)")
 
             except Exception as e:

@@ -1494,6 +1494,29 @@
       "market_hour": 14,
       "day_of_week": 2,
       "timestamp": "2026-04-22T14:01:06.501577"
+    },
+    {
+      "id": "4fff4be1-4342-408e-87bb-fcb8f98e1447",
+      "symbol": "EURUSD+",
+      "direction": "SELL",
+      "entry_price": 1.17157,
+      "exit_price": 1.17307,
+      "sl": 1.17307,
+      "tp": 1.16907,
+      "profit_pips": -0.00010000000000000379,
+      "profit_pct": -0.12803332280615387,
+      "outcome": "LOSS",
+      "duration_hours": 1.0,
+      "rsi_at_entry": 63.03987345255655,
+      "macd_hist_at_entry": 9.096430841682292e-05,
+      "ma_alignment": 0.0,
+      "ob_score": 0,
+      "candle_score": 0,
+      "trendline_score": 0,
+      "total_score": 66.66666666666666,
+      "market_hour": 20,
+      "day_of_week": 2,
+      "timestamp": "2026-04-22T20:37:39.003874"
     }
   ],
   "pattern_memory": {
@@ -1521,6 +1544,11 @@
       "wins": 12,
       "losses": 1,
       "total_profit": 0.5071508217319135
+    },
+    "EURUSD+_SELL_ob0_candle0": {
+      "wins": 0,
+      "losses": 1,
+      "total_profit": -0.12803332280615387
     }
   }
 }
