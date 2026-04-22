@@ -1,5 +1,6 @@
 """
-core/mt5_connector.py — MT5 връзка и изпълнение на поръчки
+core/mt5_connector.py — MT5 връзка и изпълнение на поръчки (FIXED)
+✅ Подобрена обработка на позиции
 """
 
 import logging
@@ -105,6 +106,10 @@ class MT5Connector:
         }
 
     def get_open_positions(self) -> List[Dict]:
+        """
+        Взима отворени позиции от MT5.
+        Връща структурирани позиции с всички нужни ключове.
+        """
         if self._mt5 is None:
             return []
         positions = self._mt5.positions_get()
@@ -118,6 +123,7 @@ class MT5Connector:
                 "type": "BUY" if p.type == 0 else "SELL",
                 "volume": p.volume,
                 "open_price": p.price_open,
+                "price_open": p.price_open,  # ✅ Добавен ключ за съвместимост
                 "sl": p.sl,
                 "tp": p.tp,
                 "profit": p.profit,
@@ -127,11 +133,15 @@ class MT5Connector:
 
     def place_order(self, symbol: str, order_type: str, volume: float,
                     sl: float, tp: float, comment: str = "AI_BOT") -> Optional[Dict]:
-        """Изпраща поръчка към MT5."""
+        """
+        Изпраща поръчка към MT5.
+
+        ✅ ФИКС за JPN225ft: Добавена валидация на SL/TP разстояние
+        """
         if self._mt5 is None:
             logger.info(f"📋 [СИМУЛАЦИЯ] {order_type} {volume} {symbol} | SL:{sl:.5f} TP:{tp:.5f}")
             return {"ticket": np.random.randint(100000, 999999), "symbol": symbol,
-                    "type": order_type, "volume": volume, "sl": sl, "tp": tp}
+                    "type": order_type, "volume": volume, "sl": sl, "tp": tp, "price_open": 0}
 
         mt5 = self._mt5
         tick = mt5.symbol_info_tick(symbol)
@@ -141,6 +151,30 @@ class MT5Connector:
 
         price = tick.ask if order_type == "BUY" else tick.bid
         order_type_code = mt5.ORDER_TYPE_BUY if order_type == "BUY" else mt5.ORDER_TYPE_SELL
+
+        # ✅ Валидация на SL и TP разстояние (за JPN225ft и други)
+        symbol_info = mt5.symbol_info(symbol)
+        if symbol_info:
+            min_distance = symbol_info.trade_stops_level or 0
+            if min_distance > 0:
+                if order_type == "BUY":
+                    if sl >= price:
+                        logger.error(f"❌ {symbol}: SL ({sl}) трябва да е по-нисък от entry ({price})")
+                        return None
+                    if tp <= price:
+                        logger.error(f"❌ {symbol}: TP ({tp}) трябва да е по-висок от entry ({price})")
+                        return None
+                    if (price - sl) < (min_distance * symbol_info.trade_tick_size):
+                        logger.warning(f"⚠️  {symbol}: SL разстояние ({price - sl}) е твърде близко")
+                else:  # SELL
+                    if sl <= price:
+                        logger.error(f"❌ {symbol}: SL ({sl}) трябва да е по-висок от entry ({price})")
+                        return None
+                    if tp >= price:
+                        logger.error(f"❌ {symbol}: TP ({tp}) трябва да е по-нисък от entry ({price})")
+                        return None
+                    if (sl - price) < (min_distance * symbol_info.trade_tick_size):
+                        logger.warning(f"⚠️  {symbol}: SL разстояние ({sl - price}) е твърде близко")
 
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
@@ -159,13 +193,14 @@ class MT5Connector:
 
         result = mt5.order_send(request)
         if result.retcode != mt5.TRADE_RETCODE_DONE:
-            logger.error(f"Поръчката неуспешна: {result.retcode} — {result.comment}")
+            logger.error(f"❌ {symbol} Поръчката неуспешна: {result.retcode} — {result.comment}")
+            logger.info(f"   Entry: {price:.5f} | SL: {sl:.5f} | TP: {tp:.5f}")
             return None
 
         logger.info(f"✅ {order_type} {volume} {symbol} @ {price:.5f} | "
                     f"Ticket: {result.order} | SL:{sl:.5f} TP:{tp:.5f}")
         return {"ticket": result.order, "symbol": symbol, "type": order_type,
-                "volume": volume, "price": price, "sl": sl, "tp": tp}
+                "volume": volume, "price": price, "price_open": price, "sl": sl, "tp": tp}
 
     def close_position(self, ticket: int) -> bool:
         if self._mt5 is None:
@@ -242,7 +277,8 @@ class MT5Connector:
         np.random.seed(hash(symbol) % 2**31)
         dates = pd.date_range(end=datetime.now(), periods=count, freq="1h")
         base = {"XAUUSD": 2000, "EURUSD": 1.08, "GBPUSD": 1.27,
-                "USDJPY": 149.0, "US500": 4800, "GER40": 17000, "NAS100": 17500}
+                "USDJPY": 149.0, "US500": 4800, "SP500": 4800, "GER40": 17000,
+                "NAS100": 17500, "JPN225": 27000}
         price = base.get(symbol, 100.0)
         closes = [price]
         for _ in range(count - 1):

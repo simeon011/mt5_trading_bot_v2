@@ -1,8 +1,9 @@
 """
-config/settings.py — SCALPER MODE
+config/settings.py — SCALPER MODE (FIXED)
+✅ Добавени: Trailing Stop параметри
 Adaptive pip targets спрямо баланса на акаунта
 """
-
+import math
 from dataclasses import dataclass, field
 from typing import List
 
@@ -18,13 +19,13 @@ class Settings:
 
     # ── Символи ─────────────────────────────────────────────
     SYMBOLS: List[str] = field(default_factory=lambda: [
-        "XAUUSD+",  # Gold
+        # "XAUUSD+",  # Gold
         "EURUSD+",  # Forex
         "GBPUSD+",  # Forex
         "USDJPY+",  # Forex
-        "SP500",  # S&P 500 Index
-        "JPN225ft",  # JPN index
-        "NAS100",  # NASDAQ Index
+        # "SP500",  # S&P 500 Index
+        # "JPN225ft",  # JPN index
+        # "NAS100",  # NASDAQ Index
     ])
 
     # ── Таймфреймове (SCALPER: M1 + M5 + M15) ───────────────
@@ -33,12 +34,7 @@ class Settings:
     ENTRY_TF: str = "M1"        # Прецизен вход
 
     # ── Adaptive Pip Target ──────────────────────────────────
-    # Автоматично се изчислява в scalper_engine.py
-    # Логика:
-    #   баланс < $500   → 5 пипа TP,  3 пипа SL
-    #   баланс $500-2K  → 8 пипа TP,  5 пипа SL
-    #   баланс $2K-10K  → 12 пипа TP, 7 пипа SL
-    #   баланс > $10K   → 20 пипа TP, 10 пипа SL
+    # Автоматично се изчислява в signal_engine.py
     USE_ADAPTIVE_PIPS: bool = True
     # Ако искаш ръчно — постави USE_ADAPTIVE_PIPS = False
     MANUAL_TP_PIPS: float = 10.0
@@ -46,13 +42,13 @@ class Settings:
 
     # ── Риск Management ──────────────────────────────────────
     RISK_PERCENT: float = 0.5        # 0.5% на сделка (скалпинг = по-малко)
-    MAX_DAILY_LOSS_PERCENT: float = 10.0
+    MAX_DAILY_LOSS_PERCENT: float = 4.0
     MAX_OPEN_TRADES: int = 10        # Scalper отваря повече едновременно
     MAX_TRADES_PER_SYMBOL: int = 2   # До 2 позиции на символ
-    MAX_TRADES_PER_HOUR: int = 20    # Hard limit за час
+    MAX_TRADES_PER_HOUR: int = 30    # Hard limit за час
 
     # ── Scalper Signal Settings ──────────────────────────────
-    MIN_SIGNAL_SCORE: float = 52.0   # По-нисък праг = повече сигнали
+    MIN_SIGNAL_SCORE: float = 60.0   # По-нисък праг = повече сигнали
     COOLDOWN_CYCLES: int = 0         # Без cooldown между сделки
     MIN_RR_RATIO: float = 1.5        # Минимален R:R
 
@@ -67,12 +63,19 @@ class Settings:
     MA_SLOW: int = 21
     MA_TREND: int = 50               # По-кратък тренд за M5
     ATR_PERIOD: int = 7
+
     # ── ATR Volatility Filter ────────────────────────────────
     # Ботът НЕ трейдва ако ATR е извън тези граници
     ATR_FILTER_ENABLED: bool = True
     ATR_MIN_MULTIPLIER: float = 0.5  # Пазарът е твърде тих (< 0.5x средния ATR)
     ATR_MAX_MULTIPLIER: float = 3.0  # Пазарът е твърде луд  (> 3x средния ATR)
     ATR_AVERAGE_PERIOD: int = 20  # Средно ATR за последните 20 свещи
+
+    # ── Trailing Stop (НОВО) ─────────────────────────────────
+    # ✅ Когато достигнем 40% от TP/SL → местим SL на entry
+    USE_TRAILING_STOP: bool = True          # Включен trailing stop
+    TRAILING_STOP_ATR_MULT: float = 1.5     # Разстояние = ATR * 1.5
+    TRAILING_STOP_PROFIT_THRESHOLD: float = 0.4  # 40% прогрес към TP
 
     # ── Order Blocks ─────────────────────────────────────────
     OB_LOOKBACK: int = 20
@@ -100,16 +103,28 @@ class Settings:
 
 def get_adaptive_pips(balance: float) -> dict:
     """
-    Връща TP и SL в пипове спрямо баланса.
-    Колкото повече пари, толкова по-широки цели.
+    Автоматично изчислява TP и SL спрямо баланса.
+    Използва логаритмична прогресия, за да не растат целите прекалено бързо.
     """
-    if balance < 100:
-        return {"tp": 12, "sl": 6, "label": "micro (<$100)"}
-    elif balance < 500:
-        return {"tp": 15, "sl": 8, "label": "small (<$500)"}
-    elif balance < 2000:
-        return {"tp": 8, "sl": 5, "label": "medium (<$2K)"}
-    elif balance < 10000:
-        return {"tp": 12, "sl": 7, "label": "standard (<$10K)"}
-    else:
-        return {"tp": 20, "sl": 10, "label": "large (>$10K)"}
+    # Базови стойности за много малък акаунт ($10-$50)
+    base_tp = 15
+    base_sl = 10
+
+    # Коефициент на растеж: на всеки дублиран баланс добавяме малко към целите
+    # Използваме log2, за да имаме плавна крива
+    growth = math.log2(max(balance, 10) / 10)
+
+    # Изчисляване на TP и SL
+    # Пример: при $50 TP ще е ~20, при $500 TP ще е ~30
+    calculated_tp = int(base_tp + (growth * 5))
+    calculated_sl = int(base_sl + (growth * 2.5))
+
+    # Ограничители (Caps), за да не станат прекалено огромни или малки
+    tp = max(15, min(calculated_tp, 50))
+    sl = max(10, min(calculated_sl, 25))
+
+    return {
+        "tp": tp,
+        "sl": sl,
+        "label": f"auto (dist: {tp}/{sl})"
+    }

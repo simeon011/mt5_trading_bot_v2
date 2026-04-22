@@ -38,7 +38,7 @@ class Trendline:
 @dataclass
 class CandlePattern:
     name: str
-    direction: str      # "BULLISH" или "BEARISH"
+    direction: str      # "BULLISH" eller "BEARISH"
     strength: float     # 0-1
     index: int
 

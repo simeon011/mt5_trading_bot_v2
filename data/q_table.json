@@ -1,26 +1,30 @@
 {
-  "high_bull_london": {
-    "value": -0.0006281288669186583,
-    "count": 1
-  },
-  "low_bear_ny": {
-    "value": -0.0091406770526466,
-    "count": 105
-  },
-  "mid_bear_ny": {
-    "value": -0.0051165627691337895,
-    "count": 12
-  },
-  "mid_bull_ny": {
-    "value": -0.011020516563249184,
-    "count": 29
-  },
-  "high_bull_ny": {
-    "value": -0.006401851130298138,
-    "count": 26
-  },
-  "high_bear_ny": {
-    "value": -0.0038046754379499233,
+  "mid_bull_asia": {
+    "value": -0.0005311139153355848,
     "count": 8
+  },
+  "high_bull_asia": {
+    "value": 0.003477287195432607,
+    "count": 2
+  },
+  "high_bull_london": {
+    "value": 0.021777719934435086,
+    "count": 8
+  },
+  "mid_bull_london": {
+    "value": -0.005268369277553945,
+    "count": 6
+  },
+  "low_bull_london": {
+    "value": -0.0068914539316292205,
+    "count": 9
+  },
+  "low_bear_london": {
+    "value": 0.009916588415957108,
+    "count": 10
+  },
+  "mid_bear_london": {
+    "value": 0.014322627031192687,
+    "count": 22
   }
 }

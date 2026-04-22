@@ -1,6 +1,6 @@
 """
-ml/learning_agent.py — Самообучаващ се ML агент
-Учи се от затворени сделки и подобрява бъдещите решения.
+ml/learning_agent.py — Самообучаващ се ML агент (FIXED)
+✅ Ново: По-добро логиране на преобучаването
 
 Методи на обучение:
 1. Random Forest — класификация на сигнали
@@ -88,6 +88,9 @@ class LearningAgent:
         self.q_table: Dict = {}
         self.performance_stats: Dict = {}
 
+        # ✅ НОВО: Брой за счетоводство на преобучаванията
+        self.last_retrain_count = 0
+
         os.makedirs(settings.MODEL_DIR, exist_ok=True)
         os.makedirs(settings.DATA_DIR, exist_ok=True)
         os.makedirs(settings.LOG_DIR, exist_ok=True)
@@ -108,15 +111,35 @@ class LearningAgent:
         self._save_memory()
 
         n = len(self.trade_history)
-        if (n >= self.s.ML_MIN_TRADES_TO_TRAIN and
-                n % self.s.ML_RETRAIN_INTERVAL == 0):
-            logger.info(f"🔄 Преобучаване след {n} сделки...")
-            self.train()
+
+        # ═════════════════════════════════════════════════════════════
+        # ✅ ФИКС за преобучаване логиране (Проблем 2)
+        # Проверяваме ако е време за переучаване И показваме съобщение
+        # ═════════════════════════════════════════════════════════════
+
+        if n >= self.s.ML_MIN_TRADES_TO_TRAIN:
+            if (n - self.last_retrain_count) >= self.s.ML_RETRAIN_INTERVAL:
+                logger.info(f"{'='*60}")
+                logger.info(f"🔄 ПРЕОБУЧАВАНЕ НА ML МОДЕЛ")
+                logger.info(f"   Сделки за обучение: {n}")
+                logger.info(f"   Последно преобучаване беше при: {self.last_retrain_count}")
+                logger.info(f"   Разлика: {n - self.last_retrain_count} сделки")
+                logger.info(f"{'='*60}")
+
+                metrics = self.train()
+                self.last_retrain_count = n
+
+                if metrics:
+                    logger.info(f"✅ МОДЕЛ ПРЕОБУЧЕН УСПЕШНО")
+                    logger.info(f"   Accuracy: {metrics.get('accuracy', 0):.1%}")
+                    logger.info(f"   Win Rate: {metrics.get('win_rate', 0):.1%}")
+                    logger.info(f"   Топ фактори: {list(metrics.get('feature_importance', {}).items())[:3]}")
 
         self._update_performance_stats()
         logger.info(f"📝 Сделка записана: {trade.outcome} | "
                     f"Profit: {trade.profit_pct:+.2f}% | "
-                    f"Общо: {n} сделки")
+                    f"Общо: {n} сделки | "
+                    f"До преобучаване: {self.s.ML_RETRAIN_INTERVAL - ((n - self.last_retrain_count) % self.s.ML_RETRAIN_INTERVAL)}")
 
     # ── Обучение ─────────────────────────────────────────────
 
@@ -135,10 +158,8 @@ class LearningAgent:
             logger.error("sklearn не е инсталиран. pip install scikit-learn")
             return {}
 
-        # X = np.array([t.to_feature_vector() for t in self.trade_history])
-        # y = np.array([1 if t.outcome == "WIN" else 0 for t in self.trade_history])
         X = np.array([t.to_feature_vector() for t in self.trade_history])
-        # Новият вариант:
+        # ✅ Правилна WIN/LOSS логика
         y = np.array([1 if (t.outcome == "WIN" or t.profit_pct > -0.02) else 0 for t in self.trade_history])
 
         if len(np.unique(y)) < 2:
