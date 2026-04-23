@@ -1,7 +1,8 @@
 """
 strategies/signal_engine.py — SCALPER VERSION (FIXED)
 ✅ Фиксирани: JPN225ft pip размер, валидация на SL/TP разстояние
-Minimalist Design | Bull/Bear Power Meter | Professional & Clean Logs
+✅ Динамични ATR Цели & Снайпер Филтър (Преместен след индикаторите)
+✅ Визуално Табло Логване (STYLE 2)
 """
 
 import numpy as np
@@ -11,19 +12,17 @@ from typing import Optional, List, Dict
 import logging
 
 from strategies.indicators import TechnicalIndicators, OrderBlock, Trendline, CandlePattern
-from config.settings import get_adaptive_pips
 
 logger = logging.getLogger("ScalperEngine")
 
 # ═══════════════════════════════════════════════════════════════
-# ✅ ФИКСИРАНИ PIP РАЗМЕРИ (Проблем 4)
-# Обновени правилни стойности за всички символи
+# ✅ ФИКСИРАНИ PIP РАЗМЕРИ
 # ═══════════════════════════════════════════════════════════════
 PIP_SIZE = {
     # Forex
     "EURUSD": 0.0001, "GBPUSD": 0.0001, "USDJPY": 0.01,
-    "USDCHF": 0.0001, "AUDUSD": 0.0001, "NZDUSD": 0.0001, # Добавен NZDUSD
-    "USDCAD": 0.0001, "EURGBP": 0.0001, "EURJPY": 0.01,   # Добавени USDCAD, EURGBP, EURJPY
+    "USDCHF": 0.0001, "AUDUSD": 0.0001, "NZDUSD": 0.0001,
+    "USDCAD": 0.0001, "EURGBP": 0.0001, "EURJPY": 0.01,
     # Metals & Indices
     "XAUUSD": 0.1,    "XAGUSD": 0.01,   "NAS100": 1.0,
     "US500":  0.1,    "SP500":  0.1,    "GER40":  1.0,
@@ -35,16 +34,13 @@ def get_pip(symbol: str) -> float:
     Връща pip стойността за символ.
     Default: 0.0001 за неизвестни символи
     """
-    # Проверяваме точно съвпадение първо
     if symbol.upper() in PIP_SIZE:
         return PIP_SIZE[symbol.upper()]
 
-    # След това проверяваме с префикс (за символи с суфикси)
     for key, val in PIP_SIZE.items():
         if symbol.upper().startswith(key.upper()):
             return val
 
-    # Default за неизвестни символи
     logger.warning(f"⚠️  Неизвестен символ: {symbol}. Използвам default pip 0.0001")
     return 0.0001
 
@@ -101,50 +97,44 @@ class SignalEngine:
             if avg_atr > 0:
                 atr_ratio = current_atr / avg_atr
 
-                # ПРЕДУПРЕЖДЕНИЕ ЗА ВИСОКА ВОЛАТИЛНОСТ (Пазарът е луд)
                 if atr_ratio > s.ATR_MAX_MULTIPLIER:
                     logger.warning(f"⚠️ {symbol:8} HIGH VOLATILITY | Ratio: {atr_ratio:.2f}x | Trading Paused")
                     return TradeSignal(
-                        symbol=symbol, direction="NEUTRAL", score=0,
-                        confidence=0, entry_price=current_price,
-                        stop_loss=current_price, take_profit=current_price,
-                        risk_reward=0, reasoning=f"High Volatility ({atr_ratio:.2f}x)"
+                        symbol=symbol, direction="NEUTRAL", score=0, confidence=0,
+                        entry_price=current_price, stop_loss=current_price, take_profit=current_price, risk_reward=0
                     )
 
-                # ИНФОРМАЦИЯ ЗА НИСКА ВОЛАТИЛНОСТ (Пазарът спи)
                 if atr_ratio < s.ATR_MIN_MULTIPLIER:
                     logger.info(f"💤 {symbol:8} LOW VOLATILITY  | Ratio: {atr_ratio:.2f}x | Waiting for movement")
                     return TradeSignal(
-                        symbol=symbol, direction="NEUTRAL", score=0,
-                        confidence=0, entry_price=current_price,
-                        stop_loss=current_price, take_profit=current_price,
-                        risk_reward=0, reasoning=f"Low Volatility ({atr_ratio:.2f}x)"
+                        symbol=symbol, direction="NEUTRAL", score=0, confidence=0,
+                        entry_price=current_price, stop_loss=current_price, take_profit=current_price, risk_reward=0
                     )
 
-        # ── Adaptive Pips ────────────────────────────────────
-        pips = get_adaptive_pips(self._account_balance) if s.USE_ADAPTIVE_PIPS else {"tp": s.MANUAL_TP_PIPS, "sl": s.MANUAL_SL_PIPS}
-        tp_pips, sl_pips = pips["tp"], pips["sl"]
+        # ── Динамични ATR Цели (Снайперист) ──────────────────
+        atr_series = ind.atr(df_primary, s.ATR_PERIOD)
+        current_atr = float(atr_series.iloc[-1])
+        atr_pips = current_atr / pip
+
+        tp_multiplier = 1.5
+        sl_multiplier = 1.0
+
+        tp_pips = atr_pips * tp_multiplier
+        sl_pips = atr_pips * sl_multiplier
 
         # ─────────────────────────────────────────────────────
-        # ✅ НОВО: Валидация на SL/TP разстояние за различните символи
-        # За някои символи (JPN225ft, indices) минималното разстояние е по-голямо
+        # Валидация на SL/TP разстояние за различните символи
         # ─────────────────────────────────────────────────────
-
-        # Определяме минимално разстояние спрямо символ
         min_sl_distance = 3  # Default за forex
         if symbol.upper().startswith("JPN"):
-            min_sl_distance = 5  # JPN225 нужда поне 5 точки
+            min_sl_distance = 5
         elif symbol.upper().startswith("US") or symbol.upper().startswith("NAS") or "500" in symbol.upper():
-            min_sl_distance = 3   # Indices нужда поне 3 точки
+            min_sl_distance = 3
 
-        # Ако адаптивните пипа са твърде малки, увеличаваме ги
         if sl_pips < min_sl_distance:
             sl_pips = min_sl_distance
-            logger.info(f"⚙️  {symbol}: Увеличен SL от {pips['sl']} на {sl_pips} (минимум за символ)")
-
         if tp_pips < min_sl_distance * 1.5:
             tp_pips = min_sl_distance * 2
-            logger.info(f"⚙️  {symbol}: Увеличен TP от {pips['tp']} на {tp_pips}")
 
         # ── Индикатори ───────────────────────────────────────
         rsi_val = float(ind.rsi(close, s.RSI_PERIOD).iloc[-1])
@@ -191,17 +181,26 @@ class SignalEngine:
             direction, emoji = "WAIT", "🟡"
             final_score = max(b_pct, s_pct)
 
-        # ── Professional Log ─────────────────────────────────
         reason_str = "/".join(list(dict.fromkeys(reasons))[:3])
+        if not reason_str: reason_str = "ML-Driven"
 
-        logger.info(
-            f"{emoji} {symbol:8} {direction:7} | "
-            f"Bias: {b_pct:>3.0f}%/{s_pct:<3.0f}% | "
-            f"Score: {final_score:>2.0f} | "
-            f"ML: {ml_val:>4.0%} | "
-            f"SL:{sl_pips:.0f}pip TP:{tp_pips:.0f}pip"
-            f"{' | ' + reason_str if reason_str else ''}"
-        )
+        # ── 🎯 СНАЙПЕР ФИЛТЪР (След като имаме процентите) ────
+        if tp_pips < s.MIN_TP_PIPS:
+            logger.info(
+                f"💤 {symbol:8} | СКИП | 🐂 {b_pct:>2.0f}% / 🐻 {s_pct:>2.0f}% | Мощност: {final_score:>2.0f} | "
+                f"⚠️ Отказ: TP ({tp_pips:.1f}p) е под {s.MIN_TP_PIPS}"
+            )
+            return TradeSignal(
+                symbol=symbol, direction="NEUTRAL", score=0, confidence=0, entry_price=current_price,
+                stop_loss=current_price, take_profit=current_price, risk_reward=0, reasoning="Sniper Filter"
+            )
+
+        # ── 📊 ВИЗУАЛНО ТАБЛО (За приетите сигнали) ───────────
+        if direction != "WAIT":
+            logger.info(
+                f"{emoji} {symbol:8} | {direction:4} | 🐂 {b_pct:>2.0f}% / 🐻 {s_pct:>2.0f}% | Мощност: {final_score:>2.0f} | "
+                f"🎯 SL: {sl_pips:.0f}p / TP: {tp_pips:.0f}p | {reason_str}"
+            )
 
         # ── TradeSignal Object ───────────────────────────────
         if direction == "BUY":

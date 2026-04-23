@@ -4,9 +4,11 @@ core/mt5_connector.py — MT5 връзка и изпълнение на поръ
 """
 
 import logging
+
+import mt5
 import numpy as np
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Tuple
 
 logger = logging.getLogger("MT5Connector")
@@ -232,6 +234,55 @@ class MT5Connector:
         result = mt5.order_send(request)
         return result.retcode == mt5.TRADE_RETCODE_DONE
 
+    def close_partial_position(self, ticket: int, volume_to_close: float) -> bool:
+        """Затваря точно определена част (обем) от съществуваща позиция."""
+        if self._mt5 is None:
+            logger.info(f"📋 [СИМУЛАЦИЯ] Частично затваряне на {volume_to_close} лота от позиция {ticket}")
+            return True
+
+        mt5 = self._mt5
+        position = mt5.positions_get(ticket=ticket)
+
+        if not position:
+            logger.error(f"❌ Грешка: Позиция {ticket} не е намерена за частично затваряне.")
+            return False
+
+        pos = position[0]
+
+        # Защита: Ако поисканият обем е по-голям или равен на текущия, затваряме всичко
+        if volume_to_close >= pos.volume:
+            return self.close_position(ticket)
+
+        # Определяме обратната посока за затваряне (Ако е BUY, пускаме SELL)
+        close_type = mt5.ORDER_TYPE_SELL if pos.type == 0 else mt5.ORDER_TYPE_BUY
+        tick = mt5.symbol_info_tick(pos.symbol)
+
+        if tick is None:
+            return False
+
+        price = tick.bid if pos.type == 0 else tick.ask
+
+        request = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "symbol": pos.symbol,
+            "volume": float(volume_to_close),
+            "type": close_type,
+            "position": ticket,
+            "price": price,
+            "deviation": 20,
+            "magic": 20250101,
+            "comment": "AI_PARTIAL",
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": mt5.ORDER_FILLING_IOC,
+        }
+
+        result = mt5.order_send(request)
+        if result.retcode != mt5.TRADE_RETCODE_DONE:
+            logger.error(f"❌ Неуспешно частично затваряне: {result.retcode} — {result.comment}")
+            return False
+
+        return True
+
     def modify_sl(self, ticket: int, new_sl: float, current_tp: float) -> bool:
         """Модифицира Stop Loss (за trailing stop)."""
         if self._mt5 is None:
@@ -304,3 +355,28 @@ class MT5Connector:
         volumes = np.random.randint(1000, 50000, count).astype(float)
         return pd.DataFrame({"Open": opens, "High": highs, "Low": lows,
                              "Close": closes, "Volume": volumes}, index=dates)
+
+    def get_deal_exit_price(self, ticket: int) -> Optional[float]:
+        """Търси реалната цена на затваряне в историята с изчакване."""
+        import MetaTrader5 as mt5
+        import time
+        from datetime import datetime, timedelta
+
+        if self._mt5 is None: return None
+
+        # Опитваме в продължение на 5 секунди (през 1 сек)
+        for attempt in range(5):
+            # Гледаме историята за последните 4 часа
+            from_date = datetime.now() - timedelta(hours=4)
+            deals = mt5.history_deals_get(from_date, datetime.now())
+
+            if deals:
+                for d in deals:
+                    # Търсим сделката, която затваря този тикет (DEAL_ENTRY_OUT)
+                    if d.position_id == ticket and d.entry == mt5.DEAL_ENTRY_OUT:
+                        return float(d.price)
+
+            # Ако не я намери, изчакай малко MT5 да опресни базата си
+            time.sleep(1.0)
+
+        return None

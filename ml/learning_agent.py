@@ -252,6 +252,46 @@ class LearningAgent:
 
         return result
 
+    # ── Динамични Параметри (AI Решения) ─────────────────────
+
+    def get_smart_trade_params(self, symbol: str, confidence: float, features: Dict) -> Dict[str, float]:
+        """
+        Изкуственият интелект сам избира обема и целите за сделката.
+        """
+        # 1. Умен Обем (Smart Position Sizing)
+        # Увеличаваме лота само ако AI е изключително уверен в сигнала
+        base_lot = self.s.MIN_LOT_SIZE
+        if confidence >= 0.75:
+            volume = base_lot * 2.0  # Много уверен -> двоен риск (напр. 0.08)
+        elif confidence >= 0.65:
+            volume = base_lot * 1.5  # Средно уверен -> 1.5x риск (напр. 0.06)
+        else:
+            volume = base_lot  # Защитен минимум (0.04)
+
+        # Закръгляме обема до втория знак, за да не гърми брокерът
+        volume = round(volume, 2)
+
+        # 2. Умни ATR Множители (Q-Learning Меню)
+        # Меню от опции: 1.0 (Бърз), 1.5 (Оптимален), 2.0 (Трендови)
+        state = self._get_state_key(features)
+
+        # Търсим в паметта коя стратегия работи най-добре за този час и тренд
+        # Засега подготвяме структурата с "Оптималния" избор като основа,
+        # върху която Q-Learning алгоритъмът ще започне да гради оценки.
+        best_tp_mult = 1.5
+        best_sl_mult = 1.0
+
+        # Ако пазарът е много волатилен или часът е "asia" (Азиатска сесия),
+        # AI-ът интелигентно може да реши да търси по-малки, сигурни цели:
+        if "asia" in state:
+            best_tp_mult = 1.0
+
+        return {
+            "volume": volume,
+            "tp_multiplier": best_tp_mult,
+            "sl_multiplier": best_sl_mult
+        }
+
     # ── Q-Learning ────────────────────────────────────────────
 
     def _get_state_key(self, features: Dict) -> str:

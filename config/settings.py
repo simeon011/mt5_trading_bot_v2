@@ -19,7 +19,7 @@ class Settings:
 
     # ── Символи ─────────────────────────────────────────────
     SYMBOLS: List[str] = field(default_factory=lambda: [
-        "XAUUSD+",  # Gold
+        # "XAUUSD+",  # Gold
         "EURUSD+",  # Forex
         "GBPUSD+",  # Forex
         "USDJPY+",  # Forex
@@ -50,6 +50,10 @@ class Settings:
     MAX_OPEN_TRADES: int = 10        # Scalper отваря повече едновременно
     MAX_TRADES_PER_SYMBOL: int = 2   # До 2 позиции на символ
     MAX_TRADES_PER_HOUR: int = 30    # Hard limit за час
+    MIN_LOT_SIZE: float = 0.01  # Абсолютен минимум за отваряне на сделка
+    PARTIAL_CLOSE_PERCENT: float = 0.50  # Колко затваряме на TP1 (50%)
+    MIN_TP_PIPS: float = 8.0  # Снайпер филтър: Минимум пипсове за вход
+    PARTIAL_CLOSE_MIN_LOT: float = 0.04  # Само сделки >= 0.04 имат право на частично затваряне (2 TP)
 
     # ── Scalper Signal Settings ──────────────────────────────
     MIN_SIGNAL_SCORE: float = 60.0   # По-нисък праг = повече сигнали
@@ -104,31 +108,3 @@ class Settings:
     MODEL_DIR: str = "models"
     LOG_DIR: str = "logs"
 
-
-def get_adaptive_pips(balance: float) -> dict:
-    """
-    Автоматично изчислява TP и SL спрямо баланса.
-    Използва логаритмична прогресия, за да не растат целите прекалено бързо.
-    """
-    # Базови стойности за много малък акаунт ($10-$50)
-    base_tp = 15
-    base_sl = 10
-
-    # Коефициент на растеж: на всеки дублиран баланс добавяме малко към целите
-    # Използваме log2, за да имаме плавна крива
-    growth = math.log2(max(balance, 10) / 10)
-
-    # Изчисляване на TP и SL
-    # Пример: при $50 TP ще е ~20, при $500 TP ще е ~30
-    calculated_tp = int(base_tp + (growth * 5))
-    calculated_sl = int(base_sl + (growth * 2.5))
-
-    # Ограничители (Caps), за да не станат прекалено огромни или малки
-    tp = max(15, min(calculated_tp, 50))
-    sl = max(10, min(calculated_sl, 25))
-
-    return {
-        "tp": tp,
-        "sl": sl,
-        "label": f"auto (dist: {tp}/{sl})"
-    }
