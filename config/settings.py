@@ -56,7 +56,7 @@ class Settings:
     MAX_TRADES_PER_HOUR: int = 30    # Hard limit за час
     MIN_LOT_SIZE: float = 0.01  # Абсолютен минимум за отваряне на сделка
     PARTIAL_CLOSE_PERCENT: float = 0.50  # Колко затваряме на TP1 (50%)
-    MIN_TP_PIPS: float = 8.0  # Снайпер филтър: Минимум пипсове за вход
+    MIN_TP_PIPS: float = 7.5  # Снайпер филтър: Минимум пипсове за вход
     PARTIAL_CLOSE_MIN_LOT: float = 0.04  # Само сделки >= 0.04 имат право на частично затваряне (2 TP)
 
     # ── Scalper Signal Settings ──────────────────────────────
@@ -87,7 +87,7 @@ class Settings:
     # ✅ Когато достигнем 40% от TP/SL → местим SL на entry
     USE_TRAILING_STOP: bool = True          # Включен trailing stop
     TRAILING_STOP_ATR_MULT: float = 1.5     # Разстояние = ATR * 1.5
-    TRAILING_STOP_PROFIT_THRESHOLD: float = 0.45  # 40% прогрес към TP
+    TRAILING_STOP_PROFIT_THRESHOLD: float = 0.4  # 40% прогрес към TP
 
     # ── Order Blocks ─────────────────────────────────────────
     OB_LOOKBACK: int = 20
@@ -111,4 +111,3 @@ class Settings:
     DATA_DIR: str = "data"
     MODEL_DIR: str = "models"
     LOG_DIR: str = "logs"
-    DB_PATH: str = os.path.join(BASE_DIR, "trades.db")  # ✅ ДОБАВЕН ПЪТ ДО БАЗАТА

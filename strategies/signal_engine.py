@@ -194,7 +194,7 @@ class SignalEngine:
         # ── 🎯 СНАЙПЕР ФИЛТЪР (След като имаме процентите) ────
         if tp_pips < s.MIN_TP_PIPS:
             logger.info(
-                f"💤 {symbol:8} | СКИП | 🐂 {b_pct:>2.0f}% / 🐻 {s_pct:>2.0f}% | Мощност: {final_score:>2.0f} | "
+                f"💤 {symbol:8} | СКИП | 🐂 {b_pct:>2.0f}% / 🐻 {s_pct:>2.0f}% | Мощност: {final_score:>2.0f} | 🧠 ML: {ml_val * 100:.0f}% | "
                 f"⚠️ Отказ: TP ({tp_pips:.1f}p) е под {s.MIN_TP_PIPS}"
             )
             return TradeSignal(

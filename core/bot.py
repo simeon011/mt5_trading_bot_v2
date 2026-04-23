@@ -104,7 +104,7 @@ class TradingBot:
                     logger.info(f"SKIP {symbol}: {reason}")
                     continue
 
-                if signal.risk_reward < 1.5:
+                if signal.risk_reward < 1.49:
                     logger.info(f"SKIP {symbol}: R:R={signal.risk_reward:.1f} < 1.5")
                     continue
 
@@ -117,9 +117,9 @@ class TradingBot:
                 if volume < s.PARTIAL_CLOSE_MIN_LOT:
                     dist = abs(signal.take_profit - signal.entry_price)
                     if signal.direction == "BUY":
-                        final_tp = signal.entry_price + (dist / 2)
+                        final_tp = signal.entry_price + (dist * 0.70)
                     else:
-                        final_tp = signal.entry_price - (dist / 2)
+                        final_tp = signal.entry_price - (dist * 0.70)
 
                     # Закръгляме спрямо брокера (например 5 знака)
                     final_tp = round(final_tp, 5)
