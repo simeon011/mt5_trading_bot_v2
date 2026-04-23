@@ -12,7 +12,7 @@ from typing import Dict, Set, List
 
 from core.mt5_connector import MT5Connector
 from core.risk_manager import RiskManager
-from strategies.signal_engine import SignalEngine, get_pip
+from strategies.signal_engine import SignalEngine, get_pip, TechnicalIndicators
 from ml.learning_agent import LearningAgent, TradeRecord
 
 logger = logging.getLogger("TradingBot")
@@ -165,7 +165,6 @@ class TradingBot:
                 logger.error(f"Грешка при анализ на {symbol}: {e}", exc_info=True)
 
     def _manage_open_positions(self, positions, account):
-        from strategies.indicators import TechnicalIndicators
         ind = TechnicalIndicators()
 
         for pos in positions:
@@ -321,7 +320,7 @@ class TradingBot:
                 self.risk.open_positions[pos["ticket"]] = pos
 
     def _extract_ml_features(self, symbol: str, df) -> Dict:
-        from strategies.indicators import TechnicalIndicators
+
         ind = TechnicalIndicators()
         s = self.settings
         close = df["Close"]

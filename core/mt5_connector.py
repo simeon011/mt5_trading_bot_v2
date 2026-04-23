@@ -1,15 +1,14 @@
 """
-core/mt5_connector.py — MT5 връзка и изпълнение на поръчки (FIXED)
-✅ Подобрена обработка на позиции
+core/mt5_connector.py — MT5 връзка и изпълнение на поръчки (ОПТИМИЗИРАН)
+✅ Премахнат дублиращ се код
+✅ Обединена логика за затваряне на позиции
 """
 
 import logging
-
-import mt5
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
-from typing import Optional, List, Dict, Tuple
+from typing import Optional, List, Dict
 
 logger = logging.getLogger("MT5Connector")
 
@@ -36,7 +35,7 @@ class MT5Connector:
             self._mt5 = mt5
             logger.info("✅ MetaTrader5 пакет намерен.")
         except ImportError:
-            logger.warning("⚠️  MetaTrader5 не е инсталиран. Режим симулация.")
+            logger.warning("⚠️ MetaTrader5 не е инсталиран. Режим симулация.")
             self._mt5 = None
 
     def connect(self) -> bool:
@@ -92,9 +91,9 @@ class MT5Connector:
         df = pd.DataFrame(rates)
         df["time"] = pd.to_datetime(df["time"], unit="s")
         df.set_index("time", inplace=True)
-        df.rename(columns={"open":"Open","high":"High","low":"Low",
-                            "close":"Close","tick_volume":"Volume"}, inplace=True)
-        return df[["Open","High","Low","Close","Volume"]]
+        df.rename(columns={"open": "Open", "high": "High", "low": "Low",
+                           "close": "Close", "tick_volume": "Volume"}, inplace=True)
+        return df[["Open", "High", "Low", "Close", "Volume"]]
 
     def get_account_info(self) -> Dict:
         if self._mt5 is None:
@@ -108,10 +107,7 @@ class MT5Connector:
         }
 
     def get_open_positions(self) -> List[Dict]:
-        """
-        Взима отворени позиции от MT5.
-        Връща структурирани позиции с всички нужни ключове.
-        """
+        """Взима отворени позиции от MT5."""
         if self._mt5 is None:
             return []
         positions = self._mt5.positions_get()
@@ -125,7 +121,7 @@ class MT5Connector:
                 "type": "BUY" if p.type == 0 else "SELL",
                 "volume": p.volume,
                 "open_price": p.price_open,
-                "price_open": p.price_open,  # ✅ Добавен ключ за съвместимост
+                "price_open": p.price_open,
                 "sl": p.sl,
                 "tp": p.tp,
                 "profit": p.profit,
@@ -135,11 +131,7 @@ class MT5Connector:
 
     def place_order(self, symbol: str, order_type: str, volume: float,
                     sl: float, tp: float, comment: str = "AI_BOT") -> Optional[Dict]:
-        """
-        Изпраща поръчка към MT5.
-
-        ✅ ФИКС за JPN225ft: Добавена валидация на SL/TP разстояние
-        """
+        """Изпраща поръчка към MT5 с валидация."""
         if self._mt5 is None:
             logger.info(f"📋 [СИМУЛАЦИЯ] {order_type} {volume} {symbol} | SL:{sl:.5f} TP:{tp:.5f}")
             return {"ticket": np.random.randint(100000, 999999), "symbol": symbol,
@@ -154,7 +146,7 @@ class MT5Connector:
         price = tick.ask if order_type == "BUY" else tick.bid
         order_type_code = mt5.ORDER_TYPE_BUY if order_type == "BUY" else mt5.ORDER_TYPE_SELL
 
-        # ✅ Валидация на SL и TP разстояние (за JPN225ft и други)
+        # Валидация на SL и TP разстояние
         symbol_info = mt5.symbol_info(symbol)
         if symbol_info:
             min_distance = symbol_info.trade_stops_level or 0
@@ -166,8 +158,6 @@ class MT5Connector:
                     if tp <= price:
                         logger.error(f"❌ {symbol}: TP ({tp}) трябва да е по-висок от entry ({price})")
                         return None
-                    if (price - sl) < (min_distance * symbol_info.trade_tick_size):
-                        logger.warning(f"⚠️  {symbol}: SL разстояние ({price - sl}) е твърде близко")
                 else:  # SELL
                     if sl <= price:
                         logger.error(f"❌ {symbol}: SL ({sl}) трябва да е по-висок от entry ({price})")
@@ -175,17 +165,15 @@ class MT5Connector:
                     if tp >= price:
                         logger.error(f"❌ {symbol}: TP ({tp}) трябва да е по-нисък от entry ({price})")
                         return None
-                    if (sl - price) < (min_distance * symbol_info.trade_tick_size):
-                        logger.warning(f"⚠️  {symbol}: SL разстояние ({sl - price}) е твърде близко")
 
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": symbol,
-            "volume": volume,
+            "volume": float(volume),
             "type": order_type_code,
             "price": price,
-            "sl": sl,
-            "tp": tp,
+            "sl": float(sl),
+            "tp": float(tp),
             "deviation": 20,
             "magic": 20250101,
             "comment": comment,
@@ -196,64 +184,38 @@ class MT5Connector:
         result = mt5.order_send(request)
         if result.retcode != mt5.TRADE_RETCODE_DONE:
             logger.error(f"❌ {symbol} Поръчката неуспешна: {result.retcode} — {result.comment}")
-            logger.info(f"   Entry: {price:.5f} | SL: {sl:.5f} | TP: {tp:.5f}")
             return None
 
-        logger.info(f"✅ {order_type} {volume} {symbol} @ {price:.5f} | "
-                    f"Ticket: {result.order} | SL:{sl:.5f} TP:{tp:.5f}")
+        logger.info(f"✅ {order_type} {volume} {symbol} @ {price:.5f} | Ticket: {result.order}")
         return {"ticket": result.order, "symbol": symbol, "type": order_type,
                 "volume": volume, "price": price, "price_open": price, "sl": sl, "tp": tp}
 
     def close_position(self, ticket: int) -> bool:
+        """Затваря напълно дадена позиция (Пренасочва към partial с None обем)."""
+        return self.close_partial_position(ticket, None)
+
+    def close_partial_position(self, ticket: int, volume_to_close: Optional[float] = None) -> bool:
+        """Обединена функция за пълно и частично затваряне."""
         if self._mt5 is None:
-            logger.info(f"📋 [СИМУЛАЦИЯ] Затваряне на позиция {ticket}")
-            return True
-
-        mt5 = self._mt5
-        position = mt5.positions_get(ticket=ticket)
-        if not position:
-            return False
-        pos = position[0]
-        close_type = mt5.ORDER_TYPE_SELL if pos.type == 0 else mt5.ORDER_TYPE_BUY
-        tick = mt5.symbol_info_tick(pos.symbol)
-        price = tick.bid if pos.type == 0 else tick.ask
-
-        request = {
-            "action": mt5.TRADE_ACTION_DEAL,
-            "symbol": pos.symbol,
-            "volume": pos.volume,
-            "type": close_type,
-            "position": ticket,
-            "price": price,
-            "deviation": 20,
-            "magic": 20250101,
-            "comment": "AI_BOT_CLOSE",
-            "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,
-        }
-        result = mt5.order_send(request)
-        return result.retcode == mt5.TRADE_RETCODE_DONE
-
-    def close_partial_position(self, ticket: int, volume_to_close: float) -> bool:
-        """Затваря точно определена част (обем) от съществуваща позиция."""
-        if self._mt5 is None:
-            logger.info(f"📋 [СИМУЛАЦИЯ] Частично затваряне на {volume_to_close} лота от позиция {ticket}")
+            vol_str = f"{volume_to_close} лота" if volume_to_close else "всичко"
+            logger.info(f"📋 [СИМУЛАЦИЯ] Затваряне на {vol_str} от позиция {ticket}")
             return True
 
         mt5 = self._mt5
         position = mt5.positions_get(ticket=ticket)
 
         if not position:
-            logger.error(f"❌ Грешка: Позиция {ticket} не е намерена за частично затваряне.")
+            logger.error(f"❌ Грешка: Позиция {ticket} не е намерена за затваряне.")
             return False
 
         pos = position[0]
 
-        # Защита: Ако поисканият обем е по-голям или равен на текущия, затваряме всичко
-        if volume_to_close >= pos.volume:
-            return self.close_position(ticket)
+        # Ако не е подаден обем или подаденият е по-голям от наличния, затваряме всичко
+        close_vol = float(volume_to_close) if volume_to_close and volume_to_close < pos.volume else pos.volume
 
-        # Определяме обратната посока за затваряне (Ако е BUY, пускаме SELL)
+        if close_vol <= 0:
+            return False
+
         close_type = mt5.ORDER_TYPE_SELL if pos.type == 0 else mt5.ORDER_TYPE_BUY
         tick = mt5.symbol_info_tick(pos.symbol)
 
@@ -265,20 +227,20 @@ class MT5Connector:
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": pos.symbol,
-            "volume": float(volume_to_close),
+            "volume": close_vol,
             "type": close_type,
             "position": ticket,
             "price": price,
             "deviation": 20,
             "magic": 20250101,
-            "comment": "AI_PARTIAL",
+            "comment": "AI_PARTIAL" if volume_to_close else "AI_BOT_CLOSE",
             "type_time": mt5.ORDER_TIME_GTC,
             "type_filling": mt5.ORDER_FILLING_IOC,
         }
 
         result = mt5.order_send(request)
         if result.retcode != mt5.TRADE_RETCODE_DONE:
-            logger.error(f"❌ Неуспешно частично затваряне: {result.retcode} — {result.comment}")
+            logger.error(f"❌ Неуспешно затваряне ({close_vol} лота): {result.retcode} — {result.comment}")
             return False
 
         return True
@@ -291,70 +253,11 @@ class MT5Connector:
         request = {
             "action": mt5.TRADE_ACTION_SLTP,
             "position": ticket,
-            "sl": new_sl,
-            "tp": current_tp
+            "sl": float(new_sl),
+            "tp": float(current_tp)
         }
         result = mt5.order_send(request)
         return result.retcode == mt5.TRADE_RETCODE_DONE
-
-    def calculate_volume(self, symbol: str, sl_pips: float, risk_percent: float) -> float:
-        """Изчислява лот размера спрямо риска."""
-        if self._mt5 is None:
-            return 0.01
-
-        account = self.get_account_info()
-        balance = account["balance"]
-        risk_amount = balance * (risk_percent / 100)
-
-        symbol_info = self._mt5.symbol_info(symbol)
-        if symbol_info is None:
-            return 0.01
-
-        tick_value = symbol_info.trade_tick_value
-        tick_size = symbol_info.trade_tick_size
-        min_lot = symbol_info.volume_min
-        max_lot = symbol_info.volume_max
-        lot_step = symbol_info.volume_step
-
-        if sl_pips <= 0 or tick_value <= 0:
-            return min_lot
-
-        value_per_pip = tick_value / tick_size
-        volume = risk_amount / (sl_pips * value_per_pip)
-        volume = max(min_lot, min(max_lot, round(volume / lot_step) * lot_step))
-        return round(volume, 2)
-
-    def _simulate_candles(self, symbol: str, count: int) -> pd.DataFrame:
-        """Генерира симулирани свещи за тестване без MT5."""
-        np.random.seed(hash(symbol) % 2 ** 31)
-        dates = pd.date_range(end=datetime.now(), periods=count, freq="1h")
-
-        # ТУК ТРЯБВА ДА СА РЕАЛНИТЕ ЦЕНИ, А НЕ ПИПОВЕТЕ
-        base = {
-            "EURUSD": 1.0850, "GBPUSD": 1.2540, "USDJPY": 155.0,
-            "USDCHF": 0.9050, "AUDUSD": 0.6500, "USDCAD": 1.3650,
-            "NZDUSD": 0.5950, "EURJPY": 168.00, "EURGBP": 0.8550,
-            "XAUUSD": 2350.0, "NAS100": 18000.0, "SP500": 5100.0
-        }
-
-        # Вземаме чистата цена без знаци като +
-        clean_symbol = symbol.replace("+", "").upper()
-        price = base.get(clean_symbol, 100.0)
-
-        closes = [price]
-        for _ in range(count - 1):
-            # Генерираме движение
-            closes.append(closes[-1] * (1 + np.random.normal(0, 0.001)))
-
-        closes = np.array(closes)
-        highs = closes * (1 + np.abs(np.random.normal(0, 0.0005, count)))
-        lows = closes * (1 - np.abs(np.random.normal(0, 0.0005, count)))
-        opens = np.roll(closes, 1)
-        opens[0] = closes[0] * 0.999  # Оправяме първата свещ
-
-        volumes = np.random.randint(1000, 50000, count).astype(float)
-        return pd.DataFrame({"Open": opens, "High": highs, "Low": lows,
-                             "Close": closes, "Volume": volumes}, index=dates)
 
     def get_deal_exit_price(self, ticket: int) -> Optional[float]:
         """Търси реалната цена на затваряне в историята с изчакване."""
@@ -366,17 +269,43 @@ class MT5Connector:
 
         # Опитваме в продължение на 5 секунди (през 1 сек)
         for attempt in range(5):
-            # Гледаме историята за последните 4 часа
             from_date = datetime.now() - timedelta(hours=4)
             deals = mt5.history_deals_get(from_date, datetime.now())
 
             if deals:
                 for d in deals:
-                    # Търсим сделката, която затваря този тикет (DEAL_ENTRY_OUT)
                     if d.position_id == ticket and d.entry == mt5.DEAL_ENTRY_OUT:
                         return float(d.price)
 
-            # Ако не я намери, изчакай малко MT5 да опресни базата си
             time.sleep(1.0)
 
         return None
+
+    def _simulate_candles(self, symbol: str, count: int) -> pd.DataFrame:
+        """Генерира симулирани свещи за тестване без MT5."""
+        np.random.seed(hash(symbol) % 2 ** 31)
+        dates = pd.date_range(end=datetime.now(), periods=count, freq="1h")
+
+        base = {
+            "EURUSD": 1.0850, "GBPUSD": 1.2540, "USDJPY": 155.0,
+            "USDCHF": 0.9050, "AUDUSD": 0.6500, "USDCAD": 1.3650,
+            "NZDUSD": 0.5950, "EURJPY": 168.00, "EURGBP": 0.8550,
+            "XAUUSD": 2350.0, "NAS100": 18000.0, "SP500": 5100.0
+        }
+
+        clean_symbol = symbol.replace("+", "").upper()
+        price = base.get(clean_symbol, 100.0)
+
+        closes = [price]
+        for _ in range(count - 1):
+            closes.append(closes[-1] * (1 + np.random.normal(0, 0.001)))
+
+        closes = np.array(closes)
+        highs = closes * (1 + np.abs(np.random.normal(0, 0.0005, count)))
+        lows = closes * (1 - np.abs(np.random.normal(0, 0.0005, count)))
+        opens = np.roll(closes, 1)
+        opens[0] = closes[0] * 0.999
+
+        volumes = np.random.randint(1000, 50000, count).astype(float)
+        return pd.DataFrame({"Open": opens, "High": highs, "Low": lows,
+                             "Close": closes, "Volume": volumes}, index=dates)

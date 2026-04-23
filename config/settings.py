@@ -1,12 +1,16 @@
 """
 config/settings.py — SCALPER MODE (FIXED)
 ✅ Добавени: Trailing Stop параметри
-Adaptive pip targets спрямо баланса на акаунта
+✅ Adaptive pip targets спрямо баланса на акаунта
+✅ Динамичен път до базата данни
 """
+import os
 import math
 from dataclasses import dataclass, field
 from typing import List
 
+# Динамично намиране на главната папка на проекта
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 @dataclass
 class Settings:
@@ -83,7 +87,7 @@ class Settings:
     # ✅ Когато достигнем 40% от TP/SL → местим SL на entry
     USE_TRAILING_STOP: bool = True          # Включен trailing stop
     TRAILING_STOP_ATR_MULT: float = 1.5     # Разстояние = ATR * 1.5
-    TRAILING_STOP_PROFIT_THRESHOLD: float = 0.4  # 40% прогрес към TP
+    TRAILING_STOP_PROFIT_THRESHOLD: float = 0.45  # 40% прогрес към TP
 
     # ── Order Blocks ─────────────────────────────────────────
     OB_LOOKBACK: int = 20
@@ -107,4 +111,4 @@ class Settings:
     DATA_DIR: str = "data"
     MODEL_DIR: str = "models"
     LOG_DIR: str = "logs"
-
+    DB_PATH: str = os.path.join(BASE_DIR, "trades.db")  # ✅ ДОБАВЕН ПЪТ ДО БАЗАТА

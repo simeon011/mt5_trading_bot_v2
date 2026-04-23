@@ -1,0 +1,29 @@
+2026-04-23 15:39:46,251 [INFO] main: 🚀 Стартиране в режим: LIVE
+2026-04-23 15:39:46,252 [INFO] main: 📊 Символи: ['EURUSD+', 'GBPUSD+', 'USDJPY+', 'NZDUSD+', 'EURJPY+', 'EURGBP+', 'USDCAD+']
+2026-04-23 15:39:46,252 [INFO] TradingBot: Инициализиране на модули...
+2026-04-23 15:39:46,255 [INFO] MT5Connector: ✅ MetaTrader5 пакет намерен.
+2026-04-23 15:39:46,255 [INFO] LearningAgent: 🧠 ML агент зареден | 0 сделки в паметта
+2026-04-23 15:39:46,257 [INFO] MT5Connector: ✅ Свързан с MT5 | Акаунт: 25080519 | Баланс: 41.03 USD | Сървър: VantageInternational-Demo
+2026-04-23 15:39:46,257 [INFO] TradingBot: Всички модули инициализирани.
+2026-04-23 15:39:46,258 [INFO] main: ⏳ Бот е активен. Ctrl+C за спиране.
+2026-04-23 15:39:46,258 [CYCLE] TradingBot: –––––––––––––––Цикъл #1 [15:39:46]–––––––––––––––
+2026-04-23 15:39:46,270 [INFO] ScalperEngine: 💤 EURUSD+  | СКИП | 🐂 78% / 🐻 22% | Мощност: 78 | ⚠️ Отказ: TP (7.9p) е под 8.0
+2026-04-23 15:39:46,280 [INFO] ScalperEngine: 🔴 GBPUSD+  | SELL | 🐂 40% / 🐻 60% | Мощност: 60 | 🎯 SL: 6p / TP: 10p | ML-Driven
+2026-04-23 15:39:46,280 [INFO] RiskManager: 🔄 Дневен риск reset. Начален баланс: 41.03 USD
+2026-04-23 15:39:46,280 [INFO] TradingBot: SKIP GBPUSD+: R:R=1.5 < 1.5
+2026-04-23 15:39:46,291 [INFO] ScalperEngine: 🔴 USDJPY+  | SELL | 🐂 33% / 🐻 67% | Мощност: 67 | 🎯 SL: 6p / TP: 9p | Trend-DOWN
+2026-04-23 15:39:46,291 [INFO] TradingBot: 📐 USDJPY+: Малък лот (0.01). Зададен единичен TP на ниво TP1.
+2026-04-23 15:39:46,291 [INFO] TradingBot: SIGNAL USDJPY+ | SELL | Лот: 0.01 | Score:66.7 | TP Level: TP1
+2026-04-23 15:39:46,427 [INFO] MT5Connector: ✅ SELL 0.01 USDJPY+ @ 159.49200 | Ticket: 1210559711
+2026-04-23 15:39:46,427 [INFO] RiskManager: 📌 Позиция регистрирана: 1210559711 | Общо отворени: 1
+2026-04-23 15:39:46,438 [INFO] ScalperEngine: 💤 NZDUSD+  | СКИП | 🐂  0% / 🐻 100% | Мощност: 100 | ⚠️ Отказ: TP (6.5p) е под 8.0
+2026-04-23 15:39:46,448 [INFO] ScalperEngine: 🟢 EURJPY+  | BUY  | 🐂 60% / 🐻 40% | Мощност: 60 | 🎯 SL: 5p / TP: 8p | ML-Driven
+2026-04-23 15:39:46,448 [INFO] TradingBot: 📐 EURJPY+: Малък лот (0.01). Зададен единичен TP на ниво TP1.
+2026-04-23 15:39:46,448 [INFO] TradingBot: SIGNAL EURJPY+ | BUY | Лот: 0.01 | Score:60.0 | TP Level: TP1
+2026-04-23 15:39:46,585 [INFO] MT5Connector: ✅ BUY 0.01 EURJPY+ @ 186.53000 | Ticket: 1210559717
+2026-04-23 15:39:46,585 [INFO] RiskManager: 📌 Позиция регистрирана: 1210559717 | Общо отворени: 2
+2026-04-23 15:39:46,598 [INFO] ScalperEngine: 💤 EURGBP+  | СКИП | 🐂 50% / 🐻 50% | Мощност: 50 | ⚠️ Отказ: TP (6.0p) е под 8.0
+2026-04-23 15:39:46,608 [INFO] ScalperEngine: 💤 USDCAD+  | СКИП | 🐂 100% / 🐻  0% | Мощност: 100 | ⚠️ Отказ: TP (5.3p) е под 8.0
+2026-04-23 15:39:48,537 [INFO] main: 🛑 Бот спрян от потребителя.
+2026-04-23 15:39:48,538 [INFO] MT5Connector: MT5 връзката затворена.
+2026-04-23 15:39:48,538 [INFO] TradingBot: Финален отчет: {'daily_pnl': 0.0, 'daily_trades': 2, 'daily_losses': 0, 'open_positions': 2, 'trading_halted': False, 'halt_reason': '', 'start_balance': 41.03}

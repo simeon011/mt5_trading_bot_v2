@@ -1,8 +1,9 @@
 """
-strategies/signal_engine.py — SCALPER VERSION (FIXED)
+strategies/signal_engine.py — SCALPER VERSION (FIXED & OPTIMIZED)
 ✅ Фиксирани: JPN225ft pip размер, валидация на SL/TP разстояние
-✅ Динамични ATR Цели & Снайпер Филтър (Преместен след индикаторите)
+✅ Динамични ATR Цели & Снайпер Филтър
 ✅ Визуално Табло Логване (STYLE 2)
+⚡ ОПТИМИЗИРАН: ATR се изчислява само веднъж, Универсален PIP калкулатор
 """
 
 import numpy as np
@@ -15,34 +16,29 @@ from strategies.indicators import TechnicalIndicators, OrderBlock, Trendline, Ca
 
 logger = logging.getLogger("ScalperEngine")
 
-# ═══════════════════════════════════════════════════════════════
-# ✅ ФИКСИРАНИ PIP РАЗМЕРИ
-# ═══════════════════════════════════════════════════════════════
-PIP_SIZE = {
-    # Forex
-    "EURUSD": 0.0001, "GBPUSD": 0.0001, "USDJPY": 0.01,
-    "USDCHF": 0.0001, "AUDUSD": 0.0001, "NZDUSD": 0.0001,
-    "USDCAD": 0.0001, "EURGBP": 0.0001, "EURJPY": 0.01,
-    # Metals & Indices
-    "XAUUSD": 0.1,    "XAGUSD": 0.01,   "NAS100": 1.0,
-    "US500":  0.1,    "SP500":  0.1,    "GER40":  1.0,
-    "UK100":  1.0,    "US30":   1.0,    "JPN225": 1.0
-}
 
+# ═══════════════════════════════════════════════════════════════
+# ✅ УНИВЕРСАЛНА PIP ФУНКЦИЯ (Автоматично разпознава актива)
+# ═══════════════════════════════════════════════════════════════
 def get_pip(symbol: str) -> float:
     """
-    Връща pip стойността за символ.
-    Default: 0.0001 за неизвестни символи
+    Универсална функция за определяне на размера на 1 пип.
+    Автоматично разпознава класа на актива (Forex, Йени, Злато, Крипто, Индекси).
     """
-    if symbol.upper() in PIP_SIZE:
-        return PIP_SIZE[symbol.upper()]
+    sym = symbol.upper()
 
-    for key, val in PIP_SIZE.items():
-        if symbol.upper().startswith(key.upper()):
-            return val
-
-    logger.warning(f"⚠️  Неизвестен символ: {symbol}. Използвам default pip 0.0001")
-    return 0.0001
+    if "JPY" in sym:
+        return 0.01  # Всички йени (USDJPY, EURJPY и т.н.)
+    elif "XAU" in sym or "GOLD" in sym:
+        return 0.1  # Злато (1 пип = 10 цента)
+    elif "BTC" in sym or "ETH" in sym:
+        return 1.0  # Криптовалути
+    elif "NAS100" in sym or "US30" in sym or "JPN225" in sym or "GER40" in sym or "UK100" in sym:
+        return 1.0  # Индекси с голяма стойност
+    elif "SP500" in sym or "US500" in sym:
+        return 0.1  # SP500 обикновено се котира с десетични
+    else:
+        return 0.0001  # Стандартни валутни двойки (EURUSD, GBPUSD и т.н.)
 
 
 @dataclass
@@ -88,10 +84,12 @@ class SignalEngine:
         current_price = float(close.iloc[-1])
         pip = get_pip(symbol)
 
+        # ── ⚡ ОПТИМИЗАЦИЯ: Изчисляваме ATR само ВЕДНЪЖ тук най-отгоре
+        atr_series = ind.atr(df_primary, s.ATR_PERIOD)
+        current_atr = float(atr_series.iloc[-1])
+
         # ── ATR Filter ───────────────────────────────────────
         if s.ATR_FILTER_ENABLED:
-            atr_series = ind.atr(df_primary, s.ATR_PERIOD)
-            current_atr = float(atr_series.iloc[-1])
             avg_atr = float(atr_series.tail(s.ATR_AVERAGE_PERIOD).mean())
 
             if avg_atr > 0:
@@ -112,8 +110,7 @@ class SignalEngine:
                     )
 
         # ── Динамични ATR Цели (Снайперист) ──────────────────
-        atr_series = ind.atr(df_primary, s.ATR_PERIOD)
-        current_atr = float(atr_series.iloc[-1])
+        # Използваме вече готовия current_atr
         atr_pips = current_atr / pip
 
         tp_multiplier = 1.5
@@ -150,21 +147,31 @@ class SignalEngine:
         reasons = []
 
         # ── Simple Scoring ────────────────────────────────────
-        if rsi_val < s.RSI_OVERSOLD: bull += 25; reasons.append("RSI-OS")
-        elif rsi_val > s.RSI_OVERBOUGHT: bear += 25; reasons.append("RSI-OB")
+        if rsi_val < s.RSI_OVERSOLD:
+            bull += 25; reasons.append("RSI-OS")
+        elif rsi_val > s.RSI_OVERBOUGHT:
+            bear += 25; reasons.append("RSI-OB")
 
-        if macd_h > 0: bull += 15
-        else: bear += 15
+        if macd_h > 0:
+            bull += 15
+        else:
+            bear += 15
 
-        if current_price > ma_fast_val > ma_slow_val: bull += 20; reasons.append("Trend-UP")
-        elif current_price < ma_fast_val < ma_slow_val: bear += 20; reasons.append("Trend-DOWN")
+        if current_price > ma_fast_val > ma_slow_val:
+            bull += 20; reasons.append("Trend-UP")
+        elif current_price < ma_fast_val < ma_slow_val:
+            bear += 20; reasons.append("Trend-DOWN")
 
-        if m15_ema_f > m15_ema_s: bull += 10
-        else: bear += 10
+        if m15_ema_f > m15_ema_s:
+            bull += 10
+        else:
+            bear += 10
 
         ml_val = ml_prediction if ml_prediction else 0.5
-        if ml_val > 0.6: bull += 20
-        elif ml_val < 0.4: bear += 20
+        if ml_val > 0.6:
+            bull += 20
+        elif ml_val < 0.4:
+            bear += 20
 
         # ── Calculations ──────────────────────────────────────
         total_p = bull + bear
@@ -212,9 +219,9 @@ class SignalEngine:
 
         return TradeSignal(
             symbol=symbol, direction=direction if direction != "WAIT" else "NEUTRAL",
-            score=final_score, confidence=max(b_pct, s_pct)/100, entry_price=current_price,
+            score=final_score, confidence=max(b_pct, s_pct) / 100, entry_price=current_price,
             stop_loss=round(sl, 5), take_profit=round(tp, 5),
-            risk_reward=tp_pips/sl_pips if sl_pips > 0 else 0,
+            risk_reward=tp_pips / sl_pips if sl_pips > 0 else 0,
             sl_pips=sl_pips, tp_pips=tp_pips,
             rsi_score=bull, ma_score=bull, reasoning=reason_str
         )
