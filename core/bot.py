@@ -104,8 +104,8 @@ class TradingBot:
                     logger.info(f"SKIP {symbol}: {reason}")
                     continue
 
-                if signal.risk_reward < 1.49:
-                    logger.info(f"SKIP {symbol}: R:R={signal.risk_reward:.1f} < 1.5")
+                if signal.risk_reward < self.settings.MIN_RR_RATIO:
+                    logger.info(f"SKIP {symbol}: R:R={signal.risk_reward:.2f} < {self.settings.MIN_RR_RATIO}")
                     continue
 
                 # ═══════════════════════════════════════════════════════════
@@ -186,8 +186,13 @@ class TradingBot:
                 tp1_pips = target_pips / 2 if target_pips > 0 else 0
 
                 # Проверка за първоначалния обем
-                initial_volume = self._pending_trades.get(pos["ticket"], {}).get("initial_volume", pos["volume"])
-                is_partially_closed = pos["volume"] < initial_volume
+                pending_data = self._pending_trades.get(pos["ticket"], {})
+                initial_volume = pending_data.get("initial_volume", pos["volume"])
+                # Проверка: явно маркирано ИЛИ текущият обем е намален
+                is_partially_closed = (
+                    pending_data.get("partially_closed", False) or
+                    pos["volume"] < initial_volume
+                )
 
                 # ─── ПРАВИЛО 1: БРОНИРАНА ЖИЛЕТКА (Break-even + 2 pips) ───
                 # Активира се, когато цената измине 45% от разстоянието до TP1
@@ -207,20 +212,42 @@ class TradingBot:
                                 if self.mt5.modify_sl(pos["ticket"], new_sl, pos["tp"]):
                                     logger.info(f"🛡️ BE+2 {symbol}: SL преместен на +2 пипа.")
 
+                # ─── ПРАВИЛО 1б: TRAILING STOP (Следи цената) ───────────────
+                # Активира се след BE+2, мести SL автоматично след цената
+                if self.settings.USE_TRAILING_STOP:
+                    pos_info = self.risk.open_positions.get(pos["ticket"], pos)
+                    new_trail_sl = self.risk.calculate_trailing_stop(pos_info, current_price, float(atr))
+                    if new_trail_sl is not None:
+                        if self.mode == "live":
+                            if self.mt5.modify_sl(pos["ticket"], new_trail_sl, pos["tp"]):
+                                logger.info(f"🔄 Trailing Stop {symbol}: SL → {new_trail_sl:.5f}")
+                        # Обновяваме SL в локалния tracker
+                        if pos["ticket"] in self.risk.open_positions:
+                            self.risk.open_positions[pos["ticket"]]["sl"] = new_trail_sl
+
                 # ─── ПРАВИЛО 2: ЧАСТИЧНО ЗАТВАРЯНЕ (Само за големи лотове) ───
                 # Малките лотове (0.01-0.03) не влизат тук, защото техният TP вече е заложен на TP1 ниво
                 if initial_volume >= self.settings.PARTIAL_CLOSE_MIN_LOT:
                     if current_pips >= tp1_pips and not is_partially_closed:
-                        exact_half = initial_volume * self.settings.PARTIAL_CLOSE_PERCENT
-                        vol_to_close = math.ceil(exact_half * 100) / 100
+                        # 60% затваряме, 40% остават за TP2
+                        # Използваме floor за да не затворим ПОВЕЧЕ от 60%
+                        close_portion = initial_volume * self.settings.PARTIAL_CLOSE_PERCENT
+                        vol_to_close = math.floor(close_portion * 100) / 100
+                        vol_to_close = max(self.settings.MIN_LOT_SIZE, vol_to_close)
+
+                        # Проверка: остатъкът трябва да е минимум MIN_LOT_SIZE
+                        remainder = round(initial_volume - vol_to_close, 2)
+                        if remainder < self.settings.MIN_LOT_SIZE:
+                            vol_to_close = round(initial_volume - self.settings.MIN_LOT_SIZE, 2)
 
                         if self.mode == "live":
                             if self.mt5.close_partial_position(pos["ticket"], vol_to_close):
                                 logger.info(
-                                    f"💰 Partial Close {symbol}: Прибрани {vol_to_close} лота. Остатъкът гони TP2!")
-                                # Обновяваме информацията в pending trades
+                                    f"💰 Partial Close {symbol}: Затворени {vol_to_close} лота (60%). "
+                                    f"Остават {remainder} лота за TP2!")
+                                # Маркираме че частичното затваряне е извършено
                                 if pos["ticket"] in self._pending_trades:
-                                    self._pending_trades[pos["ticket"]]["initial_volume"] = initial_volume
+                                    self._pending_trades[pos["ticket"]]["partially_closed"] = True
 
             except Exception as e:
                 logger.debug(f"Грешка при управление на позиция {pos.get('symbol')}: {e}")
@@ -259,6 +286,7 @@ class TradingBot:
             entry = pending["entry_price"]
             symbol = signal.symbol
             initial_vol = pending.get("initial_volume", 0.01)
+
 
             # 2. Изчисляваме печалбата в пари чрез MT5 данни
             sym_info = self.mt5._mt5.symbol_info(symbol)
@@ -307,7 +335,7 @@ class TradingBot:
             )
 
             self.ml.record_trade(record)
-            self.risk.register_close(ticket, profit_pct)
+            self.risk.register_close(ticket, money_profit)
 
             emoji = "✅" if outcome == "WIN" else "❌"
             logger.info(
@@ -320,22 +348,51 @@ class TradingBot:
                 self.risk.open_positions[pos["ticket"]] = pos
 
     def _extract_ml_features(self, symbol: str, df) -> Dict:
-
         ind = TechnicalIndicators()
         s = self.settings
         close = df["Close"]
+        current_price = float(close.iloc[-1])
+
         rsi_val = float(ind.rsi(close, s.RSI_PERIOD).iloc[-1])
         _, _, macd_hist = ind.macd(close)
-        ma_f = ind.ema(close, s.MA_FAST).iloc[-1]
-        ma_s = ind.ema(close, s.MA_SLOW).iloc[-1]
+        ma_f = float(ind.ema(close, s.MA_FAST).iloc[-1])
+        ma_s = float(ind.ema(close, s.MA_SLOW).iloc[-1])
+
+        # Order Block score — цената в OB зона
+        ob_score_val = 0.0
+        try:
+            obs = ind.find_order_blocks(df, s.OB_LOOKBACK, s.OB_MIN_SIZE_ATR)
+            for ob in obs[:5]:
+                if ob.low <= current_price <= ob.high:
+                    ob_score_val = ob.strength * 20
+                    break
+        except Exception:
+            pass
+
+        # Trendline score — близо до Support/Resistance
+        tl_score_val = 0.0
+        try:
+            trendlines = ind.find_trendlines(df)
+            channel = ind.get_channel_position(df, trendlines)
+            if channel and (channel["near_support"] or channel["near_resistance"]):
+                tl_score_val = 10.0
+        except Exception:
+            pass
+
+        # Груба оценка на candle size спрямо ATR
+        atr_val = float(ind.atr(df, s.ATR_PERIOD).iloc[-1])
+        open_p = float(df["Open"].iloc[-1])
+        candle_size = abs(current_price - open_p)
+        candle_score_val = min(15.0, (candle_size / atr_val * 15) if atr_val > 0 else 5.0)
+
         return {
             "rsi": rsi_val,
             "macd_hist": float(macd_hist.iloc[-1]),
             "ma_alignment": 1.0 if ma_f > ma_s else 0.0,
-            "ob_score": 10,
-            "candle_score": 5,
-            "trendline_score": 5,
-            "total_score": 50,
+            "ob_score": ob_score_val,
+            "candle_score": candle_score_val,
+            "trendline_score": tl_score_val,
+            "total_score": 50,      # Непознато преди пълния анализ
             "hour": datetime.now().hour,
             "day_of_week": datetime.now().weekday()
         }

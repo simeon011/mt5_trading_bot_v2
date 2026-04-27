@@ -23,7 +23,7 @@ class Settings:
 
     # ── Символи ─────────────────────────────────────────────
     SYMBOLS: List[str] = field(default_factory=lambda: [
-        # "XAUUSD+",  # Gold
+        "XAUUSD+",  # Gold
         "EURUSD+",  # Forex
         "GBPUSD+",  # Forex
         "USDJPY+",  # Forex
@@ -55,7 +55,7 @@ class Settings:
     MAX_TRADES_PER_SYMBOL: int = 2   # До 2 позиции на символ
     MAX_TRADES_PER_HOUR: int = 30    # Hard limit за час
     MIN_LOT_SIZE: float = 0.01  # Абсолютен минимум за отваряне на сделка
-    PARTIAL_CLOSE_PERCENT: float = 0.50  # Колко затваряме на TP1 (50%)
+    PARTIAL_CLOSE_PERCENT: float = 0.60  # Колко затваряме на TP1 (60% → остават 40% за TP2)
     MIN_TP_PIPS: float = 7.5  # Снайпер филтър: Минимум пипсове за вход
     PARTIAL_CLOSE_MIN_LOT: float = 0.04  # Само сделки >= 0.04 имат право на частично затваряне (2 TP)
 

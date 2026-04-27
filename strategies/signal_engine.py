@@ -1,78 +1,47 @@
 """
-strategies/signal_engine.py — SCALPER VERSION (FIXED & OPTIMIZED)
-✅ Фиксирани: JPN225ft pip размер, валидация на SL/TP разстояние
-✅ Динамични ATR Цели & Снайпер Филтър
-✅ Визуално Табло Логване (STYLE 2)
-⚡ ОПТИМИЗИРАН: ATR се изчислява само веднъж, Универсален PIP калкулатор
+strategies/signal_engine.py — Главен анализатор на сигнали
+✅ Включва: Многократен анализ (M5, H1, H4), ML Интеграция, ATR Снайпер филтър
+✅ НОВО: Анализ на обема (Volume Spike) и подобрени логове
 """
 
-import numpy as np
-import pandas as pd
-from dataclasses import dataclass, field
-from typing import Optional, List, Dict
 import logging
+from dataclasses import dataclass
+from typing import Optional
+import pandas as pd
+import math
 
-from strategies.indicators import TechnicalIndicators, OrderBlock, Trendline, CandlePattern
+from strategies.indicators import TechnicalIndicators
 
 logger = logging.getLogger("ScalperEngine")
 
-
-# ═══════════════════════════════════════════════════════════════
-# ✅ УНИВЕРСАЛНА PIP ФУНКЦИЯ (Автоматично разпознава актива)
-# ═══════════════════════════════════════════════════════════════
 def get_pip(symbol: str) -> float:
-    """
-    Универсална функция за определяне на размера на 1 пип.
-    Автоматично разпознава класа на актива (Forex, Йени, Злато, Крипто, Индекси).
-    """
-    sym = symbol.upper()
-
-    if "JPY" in sym:
-        return 0.01  # Всички йени (USDJPY, EURJPY и т.н.)
-    elif "XAU" in sym or "GOLD" in sym:
-        return 0.1  # Злато (1 пип = 10 цента)
-    elif "BTC" in sym or "ETH" in sym:
-        return 1.0  # Криптовалути
-    elif "NAS100" in sym or "US30" in sym or "JPN225" in sym or "GER40" in sym or "UK100" in sym:
-        return 1.0  # Индекси с голяма стойност
-    elif "SP500" in sym or "US500" in sym:
-        return 0.1  # SP500 обикновено се котира с десетични
-    else:
-        return 0.0001  # Стандартни валутни двойки (EURUSD, GBPUSD и т.н.)
-
+    """Връща стойността на 1 пип за дадения символ."""
+    return 0.01 if "JPY" in symbol else 0.0001
 
 @dataclass
 class TradeSignal:
     symbol: str
-    direction: str
-    score: float
-    confidence: float
+    direction: str          # "BUY", "SELL", "NEUTRAL", "WAIT"
+    score: float            # Мощност на сигнала
+    confidence: float       # Процент сигурност (напр. 85.0)
     entry_price: float
     stop_loss: float
     take_profit: float
     risk_reward: float
-    sl_pips: float = 0
-    tp_pips: float = 0
-    rsi_score: float = 0
-    macd_score: float = 0
-    ma_score: float = 0
-    ob_score: float = 0
-    candle_score: float = 0
-    ml_score: float = 0
-    trendline_score: float = 0
-    candle_patterns: List[CandlePattern] = field(default_factory=list)
-    active_ob: Optional[OrderBlock] = None
     reasoning: str = ""
+    ob_score: float = 0.0
+    candle_score: float = 0.0
+    trendline_score: float = 0.0
 
 
 class SignalEngine:
     def __init__(self, settings):
         self.s = settings
         self.ind = TechnicalIndicators()
-        self._account_balance: float = 1000.0
+        self.account_balance = 1000.0  # Ще се обновява динамично от бота
 
     def update_balance(self, balance: float):
-        self._account_balance = balance
+        self.account_balance = balance
 
     def analyze(self, symbol: str, df_primary: pd.DataFrame,
                 df_higher: pd.DataFrame, df_entry: pd.DataFrame,
@@ -96,105 +65,228 @@ class SignalEngine:
                 atr_ratio = current_atr / avg_atr
 
                 if atr_ratio > s.ATR_MAX_MULTIPLIER:
-                    logger.warning(f"⚠️ {symbol:8} HIGH VOLATILITY | Ratio: {atr_ratio:.2f}x | Trading Paused")
+                    # logger.warning(f"⚠️ {symbol:8} HIGH VOLATILITY | Ratio: {atr_ratio:.2f}x | Trading Paused")
                     return TradeSignal(
                         symbol=symbol, direction="NEUTRAL", score=0, confidence=0,
                         entry_price=current_price, stop_loss=current_price, take_profit=current_price, risk_reward=0
                     )
 
                 if atr_ratio < s.ATR_MIN_MULTIPLIER:
-                    logger.info(f"💤 {symbol:8} LOW VOLATILITY  | Ratio: {atr_ratio:.2f}x | Waiting for movement")
+                    # logger.info(f"💤 {symbol:8} LOW VOLATILITY  | Ratio: {atr_ratio:.2f}x | Waiting for movement")
                     return TradeSignal(
                         symbol=symbol, direction="NEUTRAL", score=0, confidence=0,
                         entry_price=current_price, stop_loss=current_price, take_profit=current_price, risk_reward=0
                     )
 
-        # ── Динамични ATR Цели (Снайперист) ──────────────────
-        # Използваме вече готовия current_atr
-        atr_pips = current_atr / pip
+        # ── Изчисляване на индикаторите ──────────────────────────────────
+        # RSI
+        rsi_series = ind.rsi(close, s.RSI_PERIOD)
+        current_rsi = float(rsi_series.iloc[-1])
 
-        tp_multiplier = 1.5
-        sl_multiplier = 1.0
+        # MACD
+        macd_line, signal_line, macd_hist = ind.macd(close)
+        current_macd_hist = float(macd_hist.iloc[-1])
 
-        tp_pips = atr_pips * tp_multiplier
-        sl_pips = atr_pips * sl_multiplier
+        # Moving Averages (Trend)
+        ma_fast = float(ind.ema(close, s.MA_FAST).iloc[-1])
+        ma_slow = float(ind.ema(close, s.MA_SLOW).iloc[-1])
 
-        # ─────────────────────────────────────────────────────
-        # Валидация на SL/TP разстояние за различните символи
-        # ─────────────────────────────────────────────────────
-        min_sl_distance = 3  # Default за forex
-        if symbol.upper().startswith("JPN"):
-            min_sl_distance = 5
-        elif symbol.upper().startswith("US") or symbol.upper().startswith("NAS") or "500" in symbol.upper():
-            min_sl_distance = 3
+        # ── ТОЧКОВА СИСТЕМА (Scoring) ────────────────────────────────────
+        b_score = 0
+        s_score = 0
 
-        if sl_pips < min_sl_distance:
-            sl_pips = min_sl_distance
-        if tp_pips < min_sl_distance * 1.5:
-            tp_pips = min_sl_distance * 2
+        # 1. RSI Логика
+        if current_rsi < 40:
+            b_score += 20
+        elif current_rsi > 60:
+            s_score += 20
 
-        # ── Индикатори ───────────────────────────────────────
-        rsi_val = float(ind.rsi(close, s.RSI_PERIOD).iloc[-1])
-        macd_line, macd_sig, macd_hist = ind.macd(close, s.MACD_FAST, s.MACD_SLOW, s.MACD_SIGNAL)
-        macd_h = float(macd_hist.iloc[-1])
-        ma_fast_val = float(ind.ema(close, s.MA_FAST).iloc[-1])
-        ma_slow_val = float(ind.ema(close, s.MA_SLOW).iloc[-1])
+        # 2. MACD Логика
+        if current_macd_hist > 0:
+            b_score += 15
+        elif current_macd_hist < 0:
+            s_score += 15
 
-        m15_ema_f = ind.ema(df_higher["Close"], s.MA_FAST).iloc[-1]
-        m15_ema_s = ind.ema(df_higher["Close"], s.MA_SLOW).iloc[-1]
+        # 3. Trend Логика (Moving Averages)
+        if ma_fast > ma_slow:
+            b_score += 25
+        elif ma_fast < ma_slow:
+            s_score += 25
 
-        bull = bear = 0
-        reasons = []
+        # 4. Анализ на Свещите (Price Action)
+        open_p = float(df_primary["Open"].iloc[-1])
+        close_p = float(df_primary["Close"].iloc[-1])
+        candle_size = abs(close_p - open_p)
 
-        # ── Simple Scoring ────────────────────────────────────
-        if rsi_val < s.RSI_OVERSOLD:
-            bull += 25; reasons.append("RSI-OS")
-        elif rsi_val > s.RSI_OVERBOUGHT:
-            bear += 25; reasons.append("RSI-OB")
+        if candle_size > current_atr * 0.5:
+            if close_p > open_p:
+                b_score += 15
+            elif close_p < open_p:
+                s_score += 15
 
-        if macd_h > 0:
-            bull += 15
+        # ── 📊 АНАЛИЗ НА ОБЕМА (VOLUME SPIKE) ──
+        vol_ratio = float(ind.volume_spike(df_primary, period=20))
+
+        # Ако обемът е с поне 50% по-голям от нормалното (ratio > 1.5)
+        if vol_ratio > 1.5:
+            if close_p > open_p:  # Бича свещ + Голям обем
+                b_score += 15
+            elif close_p < open_p: # Меча свещ + Голям обем
+                s_score += 15
+
+        # 5. Order Blocks (Институционални зони — 15 точки)
+        # Цената влиза в Bullish OB → силен BUY сигнал
+        # Цената влиза в Bearish OB → силен SELL сигнал
+        obs = ind.find_order_blocks(df_primary, s.OB_LOOKBACK, s.OB_MIN_SIZE_ATR)
+        ob_score_val = 0.0
+        for ob in obs[:5]:
+            if ob.low <= current_price <= ob.high:
+                if ob.ob_type == "BULLISH":
+                    b_score += 15
+                    ob_score_val = ob.strength * 15
+                elif ob.ob_type == "BEARISH":
+                    s_score += 15
+                    ob_score_val = ob.strength * 15
+                break
+
+        # 6. Trendlines / Channel (Структура на пазара — 10 точки)
+        trendlines = ind.find_trendlines(df_primary)
+        channel = ind.get_channel_position(df_primary, trendlines)
+        tl_score_val = 0.0
+        if channel:
+            if channel["near_support"]:
+                b_score += 10
+                tl_score_val = 10.0
+            elif channel["near_resistance"]:
+                s_score += 10
+                tl_score_val = 10.0
+
+        # 7. ML Интеграция (Изкуствен Интелект — 10 точки)
+        ml_val = ml_prediction if ml_prediction is not None else 0.5
+        if ml_val >= 0.60:
+            b_score += 10
+        elif ml_val <= 0.40:
+            s_score += 10
+
+        # ── СТЪПКА 1: Tentative посока само от класическите индикатори ──
+        # RSI, MACD, MA, Candle, Volume, OB, Trendline, ML
+        classic_total = b_score + s_score
+        if classic_total == 0:
+            b_pct_c, s_pct_c = 50.0, 50.0
         else:
-            bear += 15
+            b_pct_c = (b_score / classic_total) * 100
+            s_pct_c = (s_score / classic_total) * 100
 
-        if current_price > ma_fast_val > ma_slow_val:
-            bull += 20; reasons.append("Trend-UP")
-        elif current_price < ma_fast_val < ma_slow_val:
-            bear += 20; reasons.append("Trend-DOWN")
-
-        if m15_ema_f > m15_ema_s:
-            bull += 10
+        if b_pct_c > s_pct_c:
+            tentative = "BUY"
+        elif s_pct_c > b_pct_c:
+            tentative = "SELL"
         else:
-            bear += 10
+            tentative = "WAIT"
 
-        ml_val = ml_prediction if ml_prediction else 0.5
-        if ml_val > 0.6:
-            bull += 20
-        elif ml_val < 0.4:
-            bear += 20
+        # ── СТЪПКА 2: SMC като GATE + BONUS ─────────────────────────────
+        # BOS/CHOCH/EQL никога не дават точки на обратната посока.
+        # Те или ПОТВЪРЖДАВАТ (добавят бонус) или БЛОКИРАТ сигнала изцяло.
+        ms  = ind.detect_market_structure(df_primary)
+        eq  = ind.find_equal_levels(df_primary)
 
-        # ── Calculations ──────────────────────────────────────
-        total_p = bull + bear
-        b_pct = (bull / total_p * 100) if total_p > 0 else 50
-        s_pct = (bear / total_p * 100) if total_p > 0 else 50
+        bos_icon   = ""
+        choch_icon = ""
+        eq_icon    = ""
+        smc_blocked = False
 
-        if b_pct >= s.MIN_SIGNAL_SCORE and b_pct > s_pct + 10:
-            direction, emoji = "BUY", "🟢"
-            final_score = b_pct
-        elif s_pct >= s.MIN_SIGNAL_SCORE and s_pct > b_pct + 10:
-            direction, emoji = "SELL", "🔴"
-            final_score = s_pct
+        # BOS Gate: потвърждава tentative посоката или блокира при противоречие
+        if ms.bos_direction == "BULLISH":
+            if tentative == "BUY":
+                b_score += 20
+                bos_icon = "📈 BOS↑"
+            elif tentative == "SELL":
+                smc_blocked = True
+                bos_icon = "🚫BOS↑"
+        elif ms.bos_direction == "BEARISH":
+            if tentative == "SELL":
+                s_score += 20
+                bos_icon = "📉 BOS↓"
+            elif tentative == "BUY":
+                smc_blocked = True
+                bos_icon = "🚫BOS↓"
+
+        # CHOCH Gate: по-силен от BOS — може да отмени блок от BOS ако потвърждава
+        if ms.choch_detected:
+            if ms.choch_direction == "BULLISH":
+                if tentative == "BUY":
+                    b_score += 25
+                    smc_blocked = False   # CHOCH потвърждава → отменя BOS блок
+                    choch_icon = "🔄 CHOCH↑"
+                elif tentative == "SELL":
+                    smc_blocked = True
+                    choch_icon = "🚫CHOCH↑"
+            elif ms.choch_direction == "BEARISH":
+                if tentative == "SELL":
+                    s_score += 25
+                    smc_blocked = False
+                    choch_icon = "🔄 CHOCH↓"
+                elif tentative == "BUY":
+                    smc_blocked = True
+                    choch_icon = "🚫CHOCH↓"
+
+        # EQL Gate: ликвидностни нива потвърждават или блокират
+        if eq.price_swept_eq_low or eq.price_broke_eq_high:
+            if tentative == "BUY":
+                b_score += 15
+                eq_icon = "💧EQL↑" if eq.price_swept_eq_low else "🚀EQH↑"
+            elif tentative == "SELL":
+                smc_blocked = True
+                eq_icon = "🚫EQL↑"
+        elif eq.price_swept_eq_high or eq.price_broke_eq_low:
+            if tentative == "SELL":
+                s_score += 15
+                eq_icon = "💧EQH↓" if eq.price_swept_eq_high else "🔻EQL↓"
+            elif tentative == "BUY":
+                smc_blocked = True
+                eq_icon = "🚫EQH↓"
+
+        # ── СТЪПКА 3: Финална посока ─────────────────────────────────────
+        total_possible = b_score + s_score
+        if total_possible == 0:
+            b_pct, s_pct = 50.0, 50.0
         else:
-            direction, emoji = "WAIT", "🟡"
-            final_score = max(b_pct, s_pct)
+            b_pct = (b_score / total_possible) * 100
+            s_pct = (s_score / total_possible) * 100
 
-        reason_str = "/".join(list(dict.fromkeys(reasons))[:3])
-        if not reason_str: reason_str = "ML-Driven"
+        final_score = max(b_score, s_score)
+        direction   = "WAIT"
+        reason_str  = ""
 
-        # ── 🎯 СНАЙПЕР ФИЛТЪР (След като имаме процентите) ────
+        # Ако SMC е блокирал → директно NEUTRAL
+        if smc_blocked:
+            smc_tag = " ".join(filter(None, [bos_icon, choch_icon, eq_icon]))
+            logger.info(f"🚫 {symbol:8} | SMC БЛОК [{smc_tag}] | Tentative: {tentative}")
+            return TradeSignal(
+                symbol=symbol, direction="NEUTRAL", score=0, confidence=0,
+                entry_price=current_price, stop_loss=current_price,
+                take_profit=current_price, risk_reward=0, reasoning="SMC Block"
+            )
+
+        if b_pct > s_pct and b_pct >= 60 and final_score >= s.MIN_SIGNAL_SCORE:
+            direction  = "BUY"
+            reason_str = "Trend-UP" if ma_fast > ma_slow else "Reversal-UP"
+        elif s_pct > b_pct and s_pct >= 60 and final_score >= s.MIN_SIGNAL_SCORE:
+            direction  = "SELL"
+            reason_str = "Trend-DOWN" if ma_fast < ma_slow else "Reversal-DOWN"
+
+        # ── 🎯 ДИНАМИЧНО ИЗЧИСЛЯВАНЕ НА TP / SL ЧРЕЗ ATR ──
+        tp_pips = (current_atr * getattr(self.s, 'tp_multiplier', 1.5)) / pip
+        sl_pips = (current_atr * getattr(self.s, 'sl_multiplier', 1.0)) / pip
+
+        # Защита: SL не може да е под 4 пипса (или 5 за JPY)
+        min_sl = 5.0 if "JPY" in symbol else 4.0
+        sl_pips = max(sl_pips, min_sl)
+
+        # ── 🎯 СНАЙПЕР ФИЛТЪР (Защита от слаби движения) ──
         if tp_pips < s.MIN_TP_PIPS:
             logger.info(
-                f"💤 {symbol:8} | СКИП | 🐂 {b_pct:>2.0f}% / 🐻 {s_pct:>2.0f}% | Мощност: {final_score:>2.0f} | 🧠 ML: {ml_val * 100:.0f}% | "
+                f"💤 {symbol:8} | СКИП | 🐂 {b_pct:>2.0f}% / 🐻 {s_pct:>2.0f}% | Мощност: {final_score:>2.0f} | 🧠 ML: {ml_val*100:.0f}% | "
                 f"⚠️ Отказ: TP ({tp_pips:.1f}p) е под {s.MIN_TP_PIPS}"
             )
             return TradeSignal(
@@ -202,26 +294,51 @@ class SignalEngine:
                 stop_loss=current_price, take_profit=current_price, risk_reward=0, reasoning="Sniper Filter"
             )
 
+        # Превръщане на пипсовете в реални ценови нива
+        if direction == "BUY":
+            sl_price = current_price - (sl_pips * pip)
+            tp_price = current_price + (tp_pips * pip)
+        elif direction == "SELL":
+            sl_price = current_price + (sl_pips * pip)
+            tp_price = current_price - (tp_pips * pip)
+        else:
+            sl_price = current_price
+            tp_price = current_price
+
+        # Закръгляне до 5 знака (3 за JPY) за MT5
+        decimals = 3 if "JPY" in symbol else 5
+        sl_price = round(sl_price, decimals)
+        tp_price = round(tp_price, decimals)
+
+        risk = abs(current_price - sl_price)
+        reward = abs(tp_price - current_price)
+        rr_ratio = reward / risk if risk > 0 else 0
+
         # ── 📊 ВИЗУАЛНО ТАБЛО (За приетите сигнали) ───────────
         if direction != "WAIT":
+            emoji    = "🟢" if direction == "BUY" else "🔴"
+            vol_icon = "🔥 VOL!" if vol_ratio > 1.5 else "📊 vol"
+            ob_icon  = f"🧱 OB:{ob_score_val:.0f}" if ob_score_val > 0 else ""
+            tl_icon  = f"📐 TL:{tl_score_val:.0f}" if tl_score_val > 0 else ""
+            smc_icons = " ".join(filter(None, [bos_icon, choch_icon, eq_icon]))
+
             logger.info(
-                f"{emoji} {symbol:8} | {direction:4} | 🐂 {b_pct:>2.0f}% / 🐻 {s_pct:>2.0f}% | Мощност: {final_score:>2.0f} | "
-                f"🎯 SL: {sl_pips:.0f}p / TP: {tp_pips:.0f}p | {reason_str}"
+                f"{emoji} {symbol:8} | {direction:4} | 🐂 {b_pct:>2.0f}% / 🐻 {s_pct:>2.0f}% | "
+                f"Мощност: {final_score:>2.0f} | 🧠 ML: {ml_val*100:.0f}% | {vol_icon} ({vol_ratio:.1f}x) | "
+                f"{ob_icon} {tl_icon} {smc_icons} | 🎯 SL: {sl_pips:.0f}p / TP: {tp_pips:.0f}p | {reason_str}"
             )
 
-        # ── TradeSignal Object ───────────────────────────────
-        if direction == "BUY":
-            sl, tp = current_price - sl_pips * pip, current_price + tp_pips * pip
-        elif direction == "SELL":
-            sl, tp = current_price + sl_pips * pip, current_price - tp_pips * pip
-        else:
-            sl = tp = current_price  # NEUTRAL
-
         return TradeSignal(
-            symbol=symbol, direction=direction if direction != "WAIT" else "NEUTRAL",
-            score=final_score, confidence=max(b_pct, s_pct) / 100, entry_price=current_price,
-            stop_loss=round(sl, 5), take_profit=round(tp, 5),
-            risk_reward=tp_pips / sl_pips if sl_pips > 0 else 0,
-            sl_pips=sl_pips, tp_pips=tp_pips,
-            rsi_score=bull, ma_score=bull, reasoning=reason_str
+            symbol=symbol,
+            direction=direction,
+            score=final_score,
+            confidence=max(b_pct, s_pct),
+            entry_price=current_price,
+            stop_loss=sl_price,
+            take_profit=tp_price,
+            risk_reward=rr_ratio,
+            reasoning=reason_str,
+            ob_score=ob_score_val,
+            candle_score=candle_size,
+            trendline_score=tl_score_val
         )

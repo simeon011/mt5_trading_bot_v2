@@ -115,8 +115,8 @@ class RiskManager:
         # Изчисляваме текущия % загуба за лога
         current_loss_pct = (abs(self.state.daily_pnl) / self.state.start_balance * 100) if (self.state.daily_pnl < 0 and self.state.start_balance > 0) else 0
 
-        logger.info(f"📤 Позиция затворена: {ticket} | P&L: {profit:+.2f}% | "
-                    f"Дневен P&L: {self.state.daily_pnl:+.2f}% ({current_loss_pct:.1f}%)")
+        logger.info(f"📤 Позиция затворена: {ticket} | P&L: {profit:+.2f}$ | "
+                    f"Дневен P&L: {self.state.daily_pnl:+.2f}$ ({current_loss_pct:.1f}%)")
 
     def calculate_trailing_stop(self, position: Dict, current_price: float, atr: float) -> Optional[float]:
         """
@@ -144,10 +144,12 @@ class RiskManager:
             if new_sl > current_sl and new_sl > entry_price:
                 return round(new_sl, 5)
         else:  # SELL
-            # За SELL: SL се движи надолу
+            # За SELL: SL се движи НАДОЛУ (намалява числово) за защита на печалба
+            # new_sl = current_price + trail_dist (SL е над текущата цена)
+            # Печалба = когато current_price < entry_price
+            # Trailing влиза само ако new_sl < entry_price (в зона на печалба)
             new_sl = current_price + trail_dist
-            # Само ако новия SL е по-нисък от текущия И по-нисък от entry
-            if new_sl < current_sl or (current_sl == 0 and new_sl < entry_price):
+            if (current_sl == 0 or new_sl < current_sl) and new_sl < entry_price:
                 return round(new_sl, 5)
 
         return None

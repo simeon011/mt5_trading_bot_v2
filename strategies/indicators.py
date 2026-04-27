@@ -43,6 +43,28 @@ class CandlePattern:
     index: int
 
 
+@dataclass
+class MarketStructure:
+    bos_direction: str       # "BULLISH", "BEARISH", "NONE"
+    choch_detected: bool
+    choch_direction: str     # "BULLISH" (обрат нагоре), "BEARISH" (обрат надолу), "NONE"
+    last_swing_high: float
+    last_swing_low: float
+    trend: str               # "UPTREND", "DOWNTREND", "RANGING"
+
+
+@dataclass
+class EqualLevels:
+    equal_highs: List[float]          # Ценови нива на Equal Highs
+    equal_lows: List[float]           # Ценови нива на Equal Lows
+    price_swept_eq_high: bool         # Цената е ударила и отблъсната от EQH (ликвидност взета)
+    price_swept_eq_low: bool          # Цената е ударила и отблъсната от EQL (ликвидност взета)
+    price_broke_eq_high: bool         # Цената е пробила и затворила над EQH (силен BUY)
+    price_broke_eq_low: bool          # Цената е пробила и затворила под EQL (силен SELL)
+    nearest_eq_high: Optional[float]  # Най-близкото EQH над цената
+    nearest_eq_low: Optional[float]   # Най-близкото EQL под цената
+
+
 class TechnicalIndicators:
     """Изчислява всички технически индикатори."""
 
@@ -346,3 +368,189 @@ class TechnicalIndicators:
                     patterns.append(CandlePattern("Three Black Crows", "BEARISH", 0.85, i))
 
         return patterns
+
+    # ── Market Structure: BOS & CHOCH ───────────────────────────
+
+    @staticmethod
+    def detect_market_structure(df: pd.DataFrame, window: int = 5) -> MarketStructure:
+        """
+        Открива BOS (Break of Structure) и CHOCH (Change of Character).
+
+        BOS: Цената пробива последния Swing High/Low → потвърждение на тренда.
+        CHOCH: Трендът се обръща → цената пробива в обратна посока.
+        """
+        swing_highs, swing_lows = TechnicalIndicators.find_swing_points(df, window)
+
+        closes = df["Close"].values
+        highs  = df["High"].values
+        lows   = df["Low"].values
+        current_close = float(closes[-1])
+
+        # Нужни са поне 2 swing high и 2 swing low за анализ
+        if len(swing_highs) < 2 or len(swing_lows) < 2:
+            return MarketStructure(
+                bos_direction="NONE", choch_detected=False,
+                choch_direction="NONE", last_swing_high=0.0,
+                last_swing_low=0.0, trend="RANGING"
+            )
+
+        last_sh  = float(highs[swing_highs[-1]])
+        prev_sh  = float(highs[swing_highs[-2]])
+        last_sl  = float(lows[swing_lows[-1]])
+        prev_sl  = float(lows[swing_lows[-2]])
+
+        # Определяме текущата структура
+        # Uptrend  = Higher High + Higher Low
+        # Downtrend = Lower High  + Lower Low
+        uptrend   = last_sh > prev_sh and last_sl > prev_sl
+        downtrend = last_sh < prev_sh and last_sl < prev_sl
+        trend = "UPTREND" if uptrend else ("DOWNTREND" if downtrend else "RANGING")
+
+        # ── BOS ──────────────────────────────────────────────────
+        # Цената затваря над последния Swing High → Bullish BOS (тренд нагоре потвърден)
+        # Цената затваря под последния Swing Low  → Bearish BOS (тренд надолу потвърден)
+        bos_direction = "NONE"
+        if current_close > last_sh:
+            bos_direction = "BULLISH"
+        elif current_close < last_sl:
+            bos_direction = "BEARISH"
+
+        # ── CHOCH ────────────────────────────────────────────────
+        # В Uptrend: цената пробива под последния Swing Low → обрат надолу
+        # В Downtrend: цената пробива над последния Swing High → обрат нагоре
+        choch_detected  = False
+        choch_direction = "NONE"
+
+        if uptrend and current_close < last_sl:
+            choch_detected  = True
+            choch_direction = "BEARISH"
+        elif downtrend and current_close > last_sh:
+            choch_detected  = True
+            choch_direction = "BULLISH"
+
+        return MarketStructure(
+            bos_direction=bos_direction,
+            choch_detected=choch_detected,
+            choch_direction=choch_direction,
+            last_swing_high=last_sh,
+            last_swing_low=last_sl,
+            trend=trend
+        )
+
+    # ── Equal Highs & Equal Lows ─────────────────────────────────
+
+    @staticmethod
+    def find_equal_levels(df: pd.DataFrame, window: int = 5,
+                          tolerance_atr_mult: float = 0.25) -> EqualLevels:
+        """
+        Открива Equal Highs и Equal Lows (ликвидни зони).
+
+        Equal High: два или повече Swing High на почти еднакво ниво
+        → Там седят стоповете на retail купувачи → институционалните ги таргетират
+
+        Equal Low: два или повече Swing Low на почти еднакво ниво
+        → Там седят стоповете на retail продавачи → институционалните ги таргетират
+
+        Sweep: Цената удари нивото и се върна → ликвидността е взета → обрат очакван
+        Break: Цената затвори зад нивото → продължение очаквано
+        """
+        swing_highs, swing_lows = TechnicalIndicators.find_swing_points(df, window)
+
+        highs  = df["High"].values
+        lows   = df["Low"].values
+        closes = df["Close"].values
+        current_close = float(closes[-1])
+        current_high  = float(highs[-1])
+        current_low   = float(lows[-1])
+
+        atr_val   = float(TechnicalIndicators.atr(df).iloc[-1])
+        tolerance = atr_val * tolerance_atr_mult
+
+        # ── Equal Highs ──────────────────────────────────────────
+        # Изискваме поне 2 различни swing highs в зоната (не просто шум)
+        eq_highs: List[float] = []
+        sh_prices = [float(highs[i]) for i in swing_highs[-15:]]
+        for i in range(len(sh_prices)):
+            cluster = [sh_prices[i]]
+            for j in range(len(sh_prices)):
+                if i != j and abs(sh_prices[i] - sh_prices[j]) <= tolerance:
+                    cluster.append(sh_prices[j])
+            if len(cluster) >= 2:   # Минимум 2 touch-а за валиден Equal High
+                level = round(sum(cluster) / len(cluster), 5)
+                if level not in eq_highs:
+                    eq_highs.append(level)
+
+        # ── Equal Lows ───────────────────────────────────────────
+        eq_lows: List[float] = []
+        sl_prices = [float(lows[i]) for i in swing_lows[-15:]]
+        for i in range(len(sl_prices)):
+            cluster = [sl_prices[i]]
+            for j in range(len(sl_prices)):
+                if i != j and abs(sl_prices[i] - sl_prices[j]) <= tolerance:
+                    cluster.append(sl_prices[j])
+            if len(cluster) >= 2:   # Минимум 2 touch-а за валиден Equal Low
+                level = round(sum(cluster) / len(cluster), 5)
+                if level not in eq_lows:
+                    eq_lows.append(level)
+
+        # ── Sweep vs Break Detection ──────────────────────────────
+        # Sweep на EQH: Цената е надхвърлила нивото (wick) но затворила под него
+        price_swept_eq_high = any(
+            current_high >= lvl and current_close < lvl
+            for lvl in eq_highs
+        )
+        # Break на EQH: Цената затвори над нивото → bullish continuation
+        price_broke_eq_high = any(current_close > lvl for lvl in eq_highs)
+
+        # Sweep на EQL: Цената е паднала под нивото (wick) но затворила над него
+        price_swept_eq_low = any(
+            current_low <= lvl and current_close > lvl
+            for lvl in eq_lows
+        )
+        # Break на EQL: Цената затвори под нивото → bearish continuation
+        price_broke_eq_low = any(current_close < lvl for lvl in eq_lows)
+
+        # Намираме най-близкото EQH над цената и EQL под цената
+        above = [lvl for lvl in eq_highs if lvl > current_close]
+        below = [lvl for lvl in eq_lows  if lvl < current_close]
+        nearest_eq_high = min(above) if above else None
+        nearest_eq_low  = max(below) if below else None
+
+        return EqualLevels(
+            equal_highs=sorted(eq_highs),
+            equal_lows=sorted(eq_lows),
+            price_swept_eq_high=price_swept_eq_high,
+            price_swept_eq_low=price_swept_eq_low,
+            price_broke_eq_high=price_broke_eq_high,
+            price_broke_eq_low=price_broke_eq_low,
+            nearest_eq_high=nearest_eq_high,
+            nearest_eq_low=nearest_eq_low
+        )
+
+    @staticmethod
+    def volume_spike(df, period=20):
+        """
+        Изчислява дали текущият обем е необичайно висок спрямо последните 'period' свещи.
+        Връща съотношението (ratio).
+        Пример: 1.5 означава, че обемът е 50% над средния.
+        """
+        # MetaTrader 5 връща обема в колона 'tick_volume'
+        vol_col = "tick_volume" if "tick_volume" in df.columns else "Volume"
+
+        if vol_col not in df.columns:
+            return 1.0  # Защита, ако липсва колоната
+
+        # Изчисляваме средния обем за последните 20 свещи
+        vol_sma = df[vol_col].rolling(window=period).mean()
+
+        # Взимаме обема на последната свещ и средния обем
+        current_vol = df[vol_col].iloc[-1]
+        avg_vol = vol_sma.iloc[-1]
+
+        # Пресмятаме съотношението
+        if avg_vol > 0:
+            ratio = current_vol / avg_vol
+        else:
+            ratio = 1.0
+
+        return ratio

@@ -160,7 +160,7 @@ class LearningAgent:
 
         X = np.array([t.to_feature_vector() for t in self.trade_history])
         # ✅ Правилна WIN/LOSS логика
-        y = np.array([1 if (t.outcome == "WIN" or t.profit_pct > -0.02) else 0 for t in self.trade_history])
+        y = np.array([1 if t.outcome == "WIN" else 0 for t in self.trade_history])
 
         if len(np.unique(y)) < 2:
             logger.warning("Нужни са и WIN и LOSS сделки за обучение.")
@@ -256,40 +256,91 @@ class LearningAgent:
 
     def get_smart_trade_params(self, symbol: str, confidence: float, features: Dict) -> Dict[str, float]:
         """
-        Изкуственият интелект сам избира обема и целите за сделката.
+        Умен алгоритъм за избор на лот.
+        Колкото повече е научен ботът и колкото по-добре се справя → толкова по-смело влиза.
+
+        Формула: base_lot × опит × win_rate × confidence × сесия
         """
-        # 1. Умен Обем (Smart Position Sizing)
-        # Увеличаваме лота само ако AI е изключително уверен в сигнала
         base_lot = self.s.MIN_LOT_SIZE
-        if confidence >= 0.75:
-            volume = base_lot * 2.0  # Много уверен -> двоен риск (напр. 0.08)
-        elif confidence >= 0.65:
-            volume = base_lot * 1.5  # Средно уверен -> 1.5x риск (напр. 0.06)
+        n_trades = len(self.trade_history)
+
+        # ── 1. ОПИТ: Колко сделки е научил ботът ─────────────────────
+        # Начинаещ бот е консервативен. Опитен бот може да рискува повече.
+        if n_trades < 30:
+            exp_mult = 1.0      # Новак: само минимален лот
+        elif n_trades < 100:
+            exp_mult = 1.2      # Малко опит
+        elif n_trades < 250:
+            exp_mult = 1.5      # Среден опит
         else:
-            volume = base_lot  # Защитен минимум (0.04)
+            exp_mult = 2.0      # Опитен: до двоен лот
 
-        # Закръгляме обема до втория знак, за да не гърми брокерът
-        volume = round(volume, 2)
+        # ── 2. ПОСЛЕДНИ РЕЗУЛТАТИ: Как се справя в момента ───────────
+        # Ако последните 20 сделки са лоши → намалява лота (предпазливост)
+        # Ако последните 20 са добри → увеличава лота (увереност)
+        recent = self.trade_history[-20:] if len(self.trade_history) >= 20 else self.trade_history
+        if recent:
+            recent_wr = sum(1 for t in recent if t.outcome == "WIN") / len(recent)
+            if recent_wr < 0.35:
+                wr_mult = 0.6   # Лоша серия → силно намаляване
+            elif recent_wr < 0.45:
+                wr_mult = 0.8   # Под средно → малко намаляване
+            elif recent_wr > 0.65:
+                wr_mult = 1.3   # Добра серия → увеличаване
+            else:
+                wr_mult = 1.0   # Нормално
+        else:
+            wr_mult = 1.0
 
-        # 2. Умни ATR Множители (Q-Learning Меню)
-        # Меню от опции: 1.0 (Бърз), 1.5 (Оптимален), 2.0 (Трендови)
+        # ── 3. УВЕРЕНОСТ НА ML СИГНАЛА ────────────────────────────────
+        if confidence >= 0.80:
+            conf_mult = 1.5     # Много уверен сигнал
+        elif confidence >= 0.70:
+            conf_mult = 1.2
+        elif confidence >= 0.60:
+            conf_mult = 1.0
+        else:
+            conf_mult = 0.8     # Слаб сигнал → намален лот
+
+        # ── 4. ТЪРГОВСКА СЕСИЯ ────────────────────────────────────────
+        # Активните сесии имат по-голяма ликвидност → по-предвидими движения
+        hour = features.get("hour", 12)
+        if 8 <= hour < 12:
+            session_mult = 1.4      # Лондон отваряне (най-активно)
+        elif 12 <= hour < 13:
+            session_mult = 1.6      # Лондон/NY Overlap (максимален обем)
+        elif 13 <= hour < 17:
+            session_mult = 1.3      # Нюйоркска сесия
+        elif 0 <= hour < 8:
+            session_mult = 0.6      # Азиатска сесия (по-тихо) → малък лот
+        else:
+            session_mult = 0.8      # Извън активни сесии
+
+        # ── 5. ФИНАЛЕН ЛОТ ───────────────────────────────────────────
+        raw_volume = base_lot * exp_mult * wr_mult * conf_mult * session_mult
+        # Закръгляме до 0.01 и гарантираме минимум
+        volume = max(base_lot, round(raw_volume, 2))
+
+        # ── TP/SL множители (зависят от сесията) ─────────────────────
         state = self._get_state_key(features)
-
-        # Търсим в паметта коя стратегия работи най-добре за този час и тренд
-        # Засега подготвяме структурата с "Оптималния" избор като основа,
-        # върху която Q-Learning алгоритъмът ще започне да гради оценки.
-        best_tp_mult = 1.5
-        best_sl_mult = 1.0
-
-        # Ако пазарът е много волатилен или часът е "asia" (Азиатска сесия),
-        # AI-ът интелигентно може да реши да търси по-малки, сигурни цели:
         if "asia" in state:
-            best_tp_mult = 1.0
+            best_tp_mult = 1.0      # По-малки цели при Азия
+        else:
+            best_tp_mult = 1.5
+
+        logger.info(
+            f"🎲 Лот: {volume} | Опит:{n_trades} ({exp_mult:.1f}x) | "
+            f"WR:{recent_wr*100:.0f}% ({wr_mult:.1f}x) | "
+            f"ML:{confidence*100:.0f}% ({conf_mult:.1f}x) | "
+            f"Сесия:{hour}ч ({session_mult:.1f}x)"
+            if recent else
+            f"🎲 Лот: {volume} | Опит:{n_trades} (новак)"
+        )
 
         return {
             "volume": volume,
             "tp_multiplier": best_tp_mult,
-            "sl_multiplier": best_sl_mult
+            "sl_multiplier": 1.0
         }
 
     # ── Q-Learning ────────────────────────────────────────────
