@@ -1,3 +1,7 @@
+<img width="720" height="400" alt="ChatGPT Image 28 04 2026 г , 18_47_45" src="https://github.com/user-attachments/assets/87c1236e-76a2-4a49-8ecc-37d83a565b12" />
+
+
+
 # MT5 AI Trading Bot 🤖📈
 
 Самообучаващ се алготрейдинг бот за MetaTrader 5.  
