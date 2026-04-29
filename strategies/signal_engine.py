@@ -45,7 +45,8 @@ class SignalEngine:
 
     def analyze(self, symbol: str, df_primary: pd.DataFrame,
                 df_higher: pd.DataFrame, df_entry: pd.DataFrame,
-                ml_prediction: Optional[float] = None) -> TradeSignal:
+                ml_prediction: Optional[float] = None,
+                tp_mult: float = 1.5, sl_mult: float = 1.0) -> TradeSignal:
 
         ind = self.ind
         s = self.s
@@ -243,8 +244,9 @@ class SignalEngine:
             reason_str = "Trend-DOWN" if ma_fast < ma_slow else "Reversal-DOWN"
 
         # ── 🎯 ДИНАМИЧНО ИЗЧИСЛЯВАНЕ НА TP / SL ЧРЕЗ ATR ──
-        tp_pips = (current_atr * getattr(self.s, 'tp_multiplier', 1.5)) / pip
-        sl_pips = (current_atr * getattr(self.s, 'sl_multiplier', 1.0)) / pip
+        # tp_mult / sl_mult идват от ML (get_smart_trade_params)
+        tp_pips = (current_atr * tp_mult) / pip
+        sl_pips = (current_atr * sl_mult) / pip
 
         # Защита: SL не може да е под 4 пипса (или 5 за JPY)
         min_sl = 5.0 if "JPY" in symbol else 4.0
@@ -306,6 +308,6 @@ class SignalEngine:
             risk_reward=rr_ratio,
             reasoning=reason_str,
             ob_score=ob_score_val,
-            candle_score=candle_size,
+            candle_score=min(15.0, (candle_size / current_atr * 15) if current_atr > 0 else 5.0),
             trendline_score=tl_score_val
         )

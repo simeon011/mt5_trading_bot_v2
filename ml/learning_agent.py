@@ -116,9 +116,12 @@ class LearningAgent:
         self.trade_history.append(trade)
         self._update_pattern_memory(trade)
         self._update_q_table(trade)
-        self._save_memory()
 
         n = len(self.trade_history)
+
+        # Записва на диска на всеки 5 сделки (не при всяка — намалява I/O)
+        if n % 5 == 0:
+            self._save_memory()
 
         # ═════════════════════════════════════════════════════════════
         # ✅ ФИКС за преобучаване логиране (Проблем 2)
@@ -136,6 +139,7 @@ class LearningAgent:
 
                 metrics = self.train()
                 self.last_retrain_count = n
+                self._save_memory()   # Задължително при преобучаване
 
                 if metrics:
                     logger.new_model(f"✅ МОДЕЛ ПРЕОБУЧЕН УСПЕШНО")
@@ -179,7 +183,10 @@ class LearningAgent:
             rf.fit(X_scaled, y)
             gb.fit(X_scaled, y)
 
-            rf_cv = cross_val_score(rf, X_scaled, y, cv=min(5, len(y)//5+1), scoring="accuracy")
+            # cv не може да е повече от броя проби в най-малкия клас
+            min_class_count = int(np.min(np.bincount(y)))
+            cv_folds = max(2, min(5, len(y) // 5 + 1, min_class_count))
+            rf_cv = cross_val_score(rf, X_scaled, y, cv=cv_folds, scoring="accuracy")
             self.model = {"rf": rf, "gb": gb, "scaler": scaler}
 
             with open(self.model_path, "wb") as f:
@@ -405,7 +412,8 @@ class LearningAgent:
             "worst_trade": float(min(profits)) if profits else 0,
             "profit_factor": (sum(t.profit_pct for t in wins) /
                               abs(sum(t.profit_pct for t in losses)))
-                              if losses else float("inf"),
+                              if losses and abs(sum(t.profit_pct for t in losses)) > 0
+                              else float("inf"),
             "avg_win": float(np.mean([t.profit_pct for t in wins])) if wins else 0,
             "avg_loss": float(np.mean([t.profit_pct for t in losses])) if losses else 0,
         }

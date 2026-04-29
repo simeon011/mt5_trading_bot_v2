@@ -70,22 +70,22 @@ logger = logging.getLogger("main")
 
 def main():
     parser = argparse.ArgumentParser(description="MT5 AI Trading Bot")
-    parser.add_argument("--mode", choices=["paper", "live", "backtest"], default="paper")
-    parser.add_argument("--symbol", default=None, help="Конкретен символ (напр. EURUSD)")
+    parser.add_argument("--symbol", default=None, help="Конкретен символ (напр. EURUSD+)")
     parser.add_argument("--backtest-from", default="2024-01-01")
-    parser.add_argument("--backtest-to", default="2024-12-31")
+    parser.add_argument("--backtest-to",   default="2024-12-31")
+    parser.add_argument("--backtest", action="store_true", help="Стартирай backtest")
     args = parser.parse_args()
 
     settings = Settings()
     if args.symbol:
         settings.SYMBOLS = [args.symbol]
 
-    logger.info(f"🚀 Стартиране в режим: {args.mode.upper()}")
+    logger.info(f"🚀 PhantomTrader стартиран")
     logger.info(f"📊 Символи: {settings.SYMBOLS}")
 
-    bot = TradingBot(settings, mode=args.mode)
+    bot = TradingBot(settings)
 
-    if args.mode == "backtest":
+    if args.backtest:
         bot.run_backtest(args.backtest_from, args.backtest_to)
     else:
         logger.info("⏳ Бот е активен. Ctrl+C за спиране.")

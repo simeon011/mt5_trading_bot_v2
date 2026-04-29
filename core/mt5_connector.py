@@ -7,7 +7,6 @@ core/mt5_connector.py — MT5 връзка и изпълнение на поръ
 import logging
 import time
 
-import mt5
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta

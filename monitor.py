@@ -207,6 +207,9 @@ class PhantomMonitor:
             bal = re.search(r"Баланс:\s+([\d.]+)", line)
             if bal:
                 self.current_balance = float(bal.group(1))
+                # Ако мониторът е стартиран по средата на деня и start_balance не е зададен
+                if self.start_balance == 0:
+                    self.start_balance = float(bal.group(1))
 
         # ── Нова сделка отворена (само брой, без spam) ───────
         if "MT5Connector" in line and ("✅ BUY" in line or "✅ SELL" in line):

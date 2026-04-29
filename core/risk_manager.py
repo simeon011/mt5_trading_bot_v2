@@ -81,8 +81,9 @@ class RiskManager:
         # Проверка за текущ drawdown на отворените позиции
         equity = account_info.get("equity", 0)
         drawdown = (balance - equity) / balance * 100 if balance > 0 else 0
-        if drawdown > 5.0:
-            return False, f"Drawdown {drawdown:.1f}% е твърде висок"
+        max_dd = getattr(self.s, "MAX_DRAWDOWN_PERCENT", 15.0)
+        if drawdown > max_dd:
+            return False, f"Drawdown {drawdown:.1f}% > лимит {max_dd:.0f}%"
 
         # Брой отворени позиции
         if len(self.open_positions) >= self.s.MAX_OPEN_TRADES:
