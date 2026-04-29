@@ -23,7 +23,7 @@ class Settings:
 
     # ── Символи ─────────────────────────────────────────────
     SYMBOLS: List[str] = field(default_factory=lambda: [
-        "XAUUSD+",  # Gold
+        # "XAUUSD+",  # Gold
         "EURUSD+",  # Forex
         "GBPUSD+",  # Forex
         "USDJPY+",  # Forex
@@ -36,10 +36,10 @@ class Settings:
         # "NAS100",  # NASDAQ Index
     ])
 
-    # ── Таймфреймове (SCALPER: M1 + M5 + M15) ───────────────
-    PRIMARY_TF: str = "M5"       # Основен сигнал
-    HIGHER_TF: str = "M15"      # Тренд потвърждение
-    ENTRY_TF: str = "M1"        # Прецизен вход
+    # ── Таймфреймове ─────────────────────────────────────────
+    PRIMARY_TF: str = "M15"      # Основен сигнал
+    HIGHER_TF: str = "H1"        # Тренд потвърждение
+    ENTRY_TF: str = "M5"         # Прецизен вход
 
     # ── Adaptive Pip Target ──────────────────────────────────
     # Автоматично се изчислява в signal_engine.py
@@ -49,20 +49,20 @@ class Settings:
     MANUAL_SL_PIPS: float = 6.0
 
     # ── Риск Management ──────────────────────────────────────
-    RISK_PERCENT: float = 0.5        # 0.5% на сделка (скалпинг = по-малко)
+    RISK_PERCENT: float = 1.0        # 1.0% на сделка
     MAX_DAILY_LOSS_PERCENT: float = 4.0
     MAX_OPEN_TRADES: int = 10        # Scalper отваря повече едновременно
     MAX_TRADES_PER_SYMBOL: int = 2   # До 2 позиции на символ
     MAX_TRADES_PER_HOUR: int = 30    # Hard limit за час
     MIN_LOT_SIZE: float = 0.01  # Абсолютен минимум за отваряне на сделка
     PARTIAL_CLOSE_PERCENT: float = 0.60  # Колко затваряме на TP1 (60% → остават 40% за TP2)
-    MIN_TP_PIPS: float = 7.5  # Снайпер филтър: Минимум пипсове за вход
+    MIN_TP_PIPS: float = 5.0  # Снайпер филтър: Минимум пипсове за вход
     PARTIAL_CLOSE_MIN_LOT: float = 0.04  # Само сделки >= 0.04 имат право на частично затваряне (2 TP)
 
     # ── Scalper Signal Settings ──────────────────────────────
-    MIN_SIGNAL_SCORE: float = 60.0   # По-нисък праг = повече сигнали
+    MIN_SIGNAL_SCORE: float = 60.0   # По-качествени сигнали
     COOLDOWN_CYCLES: int = 0         # Без cooldown между сделки
-    MIN_RR_RATIO: float = 1.5        # Минимален R:R
+    MIN_RR_RATIO: float = 1.3        # Минимален R:R
 
     # ── Индикатори (оптимизирани за M5) ─────────────────────
     RSI_PERIOD: int = 7              # По-бърз RSI за скалпинг

@@ -8,7 +8,7 @@ import logging
 import math
 import uuid
 from datetime import datetime
-from typing import Dict, Set, List
+from typing import Dict, Set, List, Optional
 
 from core.mt5_connector import MT5Connector
 from core.risk_manager import RiskManager
@@ -89,10 +89,15 @@ class TradingBot:
                 smart_params = self.ml.get_smart_trade_params(symbol, ml_pred, ml_features)
                 volume = smart_params["volume"]
 
-                # Анализ на сигнала
+                # Анализ на сигнала (нужен ни е SL за валидация на риска)
                 signal = self.signals.analyze(symbol, df_h1, df_h4, df_m15, ml_pred)
 
                 if signal.direction == "NEUTRAL":
+                    continue
+
+                # ── ДОЛЛАРОВ РИСК КОНТРОЛ ──────────────────────────────────
+                volume = self._cap_volume_to_risk(symbol, volume, signal.stop_loss, signal.entry_price, account)
+                if volume is None:
                     continue
 
                 # Филтри: Score, Риск Мениджър и R:R
@@ -165,6 +170,7 @@ class TradingBot:
                 logger.error(f"Грешка при анализ на {symbol}: {e}", exc_info=True)
 
     def _manage_open_positions(self, positions, account):
+        """Управлява Trailing Stop и Break-even + 2 pips защита."""
         ind = TechnicalIndicators()
 
         for pos in positions:
@@ -176,86 +182,65 @@ class TradingBot:
 
                 atr = ind.atr(df).iloc[-1]
                 current_price = df["Close"].iloc[-1]
-                pip_unit = get_pip(symbol)
+                pip_unit = get_pip(symbol)  # 0.0001 за Forex, 0.01 за JPY
 
-                # Изчисляваме прогреса спрямо целта
+                # ─────────────────────────────────────────────────────────────
+                # НОВО: Изчисляваме ПРОГРЕСА към TP1 (среда на TP)
+                # ─────────────────────────────────────────────────────────────
                 target_pips = abs(pos["tp"] - pos["price_open"])
                 current_pips = abs(current_price - pos["price_open"])
-
-                # Дефинираме TP1 като среда на разстоянието (за логиката на BE и Partial)
                 tp1_pips = target_pips / 2 if target_pips > 0 else 0
 
-                # Проверка за първоначалния обем
-                pending_data = self._pending_trades.get(pos["ticket"], {})
-                initial_volume = pending_data.get("initial_volume", pos["volume"])
-                # Проверка: явно маркирано ИЛИ текущият обем е намален
-                is_partially_closed = (
-                    pending_data.get("partially_closed", False) or
-                    pos["volume"] < initial_volume
-                )
+                progress_pct = (current_pips / tp1_pips * 100) if tp1_pips > 0 else 0
 
-                # ─── ПРАВИЛО 1: БРОНИРАНА ЖИЛЕТКА (Break-even + 2 pips) ───
-                # Активира се, когато цената измине 45% от разстоянието до TP1
-                if current_pips >= (tp1_pips * 0.45):
+                # ─────────────────────────────────────────────────────────────
+                # ПРАВИЛО 1: BREAK-EVEN + 2 ПИПА (Когато е на 45% към TP1)
+                # ─────────────────────────────────────────────────────────────
+                if progress_pct >= 45 and progress_pct < 100:
                     if pos["type"] == "BUY":
                         new_sl = pos["price_open"] + (2 * pip_unit)
-                        # Модифицираме само ако новият стоп е по-сигурен от текущия
                         if new_sl > pos["sl"] + (atr * 0.05):
                             if self.mode == "live":
                                 if self.mt5.modify_sl(pos["ticket"], new_sl, pos["tp"]):
-                                    logger.info(f"🛡️ BE+2 {symbol}: SL преместен на +2 пипа.")
+                                    logger.info(f"🛡️ BE+2 {symbol}: SL преместен на Entry+2пипа ({new_sl:.5f})")
+                                    if pos["ticket"] in self._pending_trades:
+                                        self._pending_trades[pos["ticket"]]["be_activated"] = True
 
                     elif pos["type"] == "SELL":
                         new_sl = pos["price_open"] - (2 * pip_unit)
                         if new_sl < pos["sl"] - (atr * 0.05):
                             if self.mode == "live":
                                 if self.mt5.modify_sl(pos["ticket"], new_sl, pos["tp"]):
-                                    logger.info(f"🛡️ BE+2 {symbol}: SL преместен на +2 пипа.")
+                                    logger.info(f"🛡️ BE+2 {symbol}: SL преместен на Entry-2пипа ({new_sl:.5f})")
+                                    if pos["ticket"] in self._pending_trades:
+                                        self._pending_trades[pos["ticket"]]["be_activated"] = True
 
-                # ─── ПРАВИЛО 1б: TRAILING STOP (Следи цената) ───────────────
-                # Активира се след BE+2, мести SL автоматично след цената
-                if self.settings.USE_TRAILING_STOP:
+                # ─────────────────────────────────────────────────────────────
+                # ПРАВИЛО 2: TRAILING STOP (Активира се след BE+2)
+                # ─────────────────────────────────────────────────────────────
+                if progress_pct >= 100 and self.settings.USE_TRAILING_STOP:
                     pos_info = self.risk.open_positions.get(pos["ticket"], pos)
                     new_trail_sl = self.risk.calculate_trailing_stop(pos_info, current_price, float(atr))
-                    if new_trail_sl is not None:
-                        if self.mode == "live":
-                            if self.mt5.modify_sl(pos["ticket"], new_trail_sl, pos["tp"]):
-                                logger.info(f"🔄 Trailing Stop {symbol}: SL → {new_trail_sl:.5f}")
-                        # Обновяваме SL в локалния tracker
-                        if pos["ticket"] in self.risk.open_positions:
-                            self.risk.open_positions[pos["ticket"]]["sl"] = new_trail_sl
-
-                # ─── ПРАВИЛО 2: ЧАСТИЧНО ЗАТВАРЯНЕ (Само за големи лотове) ───
-                # Малките лотове (0.01-0.03) не влизат тук, защото техният TP вече е заложен на TP1 ниво
-                if initial_volume >= self.settings.PARTIAL_CLOSE_MIN_LOT:
-                    if current_pips >= tp1_pips and not is_partially_closed:
-                        # 60% затваряме, 40% остават за TP2
-                        # Използваме floor за да не затворим ПОВЕЧЕ от 60%
-                        close_portion = initial_volume * self.settings.PARTIAL_CLOSE_PERCENT
-                        vol_to_close = math.floor(close_portion * 100) / 100
-                        vol_to_close = max(self.settings.MIN_LOT_SIZE, vol_to_close)
-
-                        # Проверка: остатъкът трябва да е минимум MIN_LOT_SIZE
-                        remainder = round(initial_volume - vol_to_close, 2)
-                        if remainder < self.settings.MIN_LOT_SIZE:
-                            vol_to_close = round(initial_volume - self.settings.MIN_LOT_SIZE, 2)
-
-                        if self.mode == "live":
-                            if self.mt5.close_partial_position(pos["ticket"], vol_to_close):
-                                logger.info(
-                                    f"💰 Partial Close {symbol}: Затворени {vol_to_close} лота (60%). "
-                                    f"Остават {remainder} лота за TP2!")
-                                # Маркираме че частичното затваряне е извършено
-                                if pos["ticket"] in self._pending_trades:
-                                    self._pending_trades[pos["ticket"]]["partially_closed"] = True
+                    if new_trail_sl is not None and self.mode == "live":
+                        if self.mt5.modify_sl(pos["ticket"], new_trail_sl, pos["tp"]):
+                            logger.debug(f"🔄 Trailing Stop {symbol}: SL → {new_trail_sl:.5f}")
 
             except Exception as e:
-                logger.debug(f"Грешка при управление на позиция {pos.get('symbol')}: {e}")
+                logger.debug(f"❌ Грешка при управление на позиция {pos.get('symbol')}: {e}")
+
+    """
+    ЗАМЕНИ функцията _check_closed_trades в core/bot.py С ТОЗИ КОД!
+
+    ВАЖНО: Комисията е калкулирана ДВОЙНО (вход + изход)
+    Ако брокерът взима 0.03$ per trade, то total е 0.06$ (вход + изход)
+    """
 
     def _check_closed_trades(self, current_positions):
         """
-        Проверява за затворени сделки и записва само потвърдени резултати от историята.
-        ✅ ФИКС: Веднага освобождава символа, за да не блокира нови сделки.
+        Проверява затворени сделки и записва правилната P&L с комисия.
+        ✅ ФИКСИРАНО: Вземаме РЕАЛНАТА цена от историята
+        ✅ ФИКСИРАНО: Калкулираме P&L с комисия (вход + изход)
+        ✅ ФИКСИРАНО: Освобождаваме символа веднага
         """
         current_tickets = {p["ticket"] for p in current_positions}
         closed_tickets = set(self._pending_trades.keys()) - current_tickets
@@ -267,18 +252,11 @@ class TradingBot:
         balance = account_info.get("balance", 1000.0)
         currency = account_info.get("currency", "USD")
 
+        # Комисия: $0.03 на 0.01 лот (вход + изход = x2)
+        COMMISSION_PER_001_LOT = 0.03
+
         for ticket in list(closed_tickets):
-            # 1. Опит за вземане на РЕАЛНАТА цена от историята
-            real_exit = self.mt5.get_deal_exit_price(ticket)
-
-            # 🚨 АКО НЕ Е НАМЕРЕНА В ИСТОРИЯТА (MT5 Lag):
-            if real_exit is None:
-                # Вземаме текущата пазарна цена за статистиката, за да не "зависваме"
-                sym = self._pending_trades[ticket]["signal"].symbol
-                logger.warning(f"⏳ Тикет {ticket} ({sym}) липсва в историята. Използвам Fallback цена.")
-                real_exit = self.mt5.get_candles(sym, "M1", 1)["Close"].iloc[-1]
-
-            # ✅ КЛЮЧ: Вадим тикета от pending ВИНАГИ тук, за да освободим символа за нови сигнали!
+            # ✅ Вадим тикета от pending ВЕДНАГА, за да освободим символа!
             pending = self._pending_trades.pop(ticket)
 
             signal = pending["signal"]
@@ -287,30 +265,49 @@ class TradingBot:
             symbol = signal.symbol
             initial_vol = pending.get("initial_volume", 0.01)
 
-
-            # 2. Изчисляваме печалбата в пари чрез MT5 данни
-            sym_info = self.mt5._mt5.symbol_info(symbol)
-            if sym_info:
-                point = sym_info.point
-                tick_val = sym_info.trade_tick_value
-                if signal.direction == "BUY":
-                    money_profit = (real_exit - entry) / point * tick_val * initial_vol
-                else:
-                    money_profit = (entry - real_exit) / point * tick_val * initial_vol
+            # 1. Вземаме P&L и цена директно от MT5
+            deal_info = self.mt5.get_deal_info(ticket)
+            if deal_info:
+                real_exit    = deal_info["price"]
+                raw_profit   = deal_info["profit"]
+                real_pnl_usd = deal_info["net"]   # profit + commission + swap от MT5
             else:
-                money_profit = 0.0
+                logger.warning(f'Ticket {ticket} ({symbol}) not found in history. Using fallback.')
+                try:
+                    df_temp = self.mt5.get_candles(symbol, 'M1', 1)
+                    real_exit = float(df_temp['Close'].iloc[-1]) if df_temp is not None and not df_temp.empty else entry
+                except:
+                    real_exit = entry
+                sym_info = self.mt5._mt5.symbol_info(symbol) if self.mt5._mt5 else None
+                if sym_info and sym_info.trade_tick_size > 0:
+                    if signal.direction == "BUY":
+                        raw_profit = (real_exit - entry) / sym_info.trade_tick_size * sym_info.trade_tick_value * initial_vol
+                    else:
+                        raw_profit = (entry - real_exit) / sym_info.trade_tick_size * sym_info.trade_tick_value * initial_vol
+                else:
+                    raw_profit = 0.0
+                TOTAL_COMMISSION = round((initial_vol / 0.01) * COMMISSION_PER_001_LOT * 2, 4)
+                real_pnl_usd = raw_profit - TOTAL_COMMISSION
 
-            # 3. Процент спрямо баланса (Синхрон с MT5 Terminal)
-            profit_pct = (money_profit / balance) * 100
+            real_pnl_pct = (real_pnl_usd / balance) * 100 if balance > 0 else 0
 
-            # 4. Пипсове за AI
+            # 4. Пипсове за AI обучение (НА БАЗАТА НА РЕАЛНАТА ЦЕНА)
             pip_unit = get_pip(symbol)
-            profit_pips = (real_exit - entry) / pip_unit if signal.direction == "BUY" else (
-                                                                                                       entry - real_exit) / pip_unit
+            if signal.direction == "BUY":
+                profit_pips = (real_exit - entry) / pip_unit
+            else:
+                profit_pips = (entry - real_exit) / pip_unit
 
             # 5. Резултат
-            outcome = "WIN" if money_profit > 0.00 else "LOSS"
+            be_activated = pending.get("be_activated", False)
+            if be_activated and profit_pips <= 5:
+                # BE SL е на entry+2 пипа — затваряне с малко пипове е BREAKEVEN
+                # независимо дали net P&L е леко + или леко - (заради комисионна)
+                outcome = "BREAKEVEN"
+            else:
+                outcome = "WIN" if real_pnl_usd > 0 else "LOSS" if real_pnl_usd < 0 else "BREAKEVEN"
 
+            # 6. Записваме в ML памет
             record = TradeRecord(
                 id=str(uuid.uuid4()),
                 symbol=symbol,
@@ -320,7 +317,7 @@ class TradingBot:
                 sl=signal.stop_loss,
                 tp=signal.take_profit,
                 profit_pips=profit_pips,
-                profit_pct=profit_pct,
+                profit_pct=real_pnl_pct,  # ← РЕАЛНИЯТ % със комисия
                 outcome=outcome,
                 duration_hours=1.0,
                 rsi_at_entry=ml_features.get("rsi", 50),
@@ -335,11 +332,15 @@ class TradingBot:
             )
 
             self.ml.record_trade(record)
-            self.risk.register_close(ticket, money_profit)
+            self.risk.register_close(ticket, real_pnl_usd)  # ← Пращаме долари, не %
 
-            emoji = "✅" if outcome == "WIN" else "❌"
+            # 7. Логиране на ПРАВИЛНАТА информация
+            emoji = "✅" if outcome == "WIN" else "❌" if outcome == "LOSS" else "⚪"
             logger.info(
-                f"{emoji} Затворена: {symbol} | P&L: {profit_pct:+.4f}% | Profit: {money_profit:+.2f} {currency}"
+                f"{emoji} Затворена: {symbol} | Entry: {entry:.5f} | Exit: {real_exit:.5f} | "
+                f"Пипсове: {profit_pips:+.1f} | Брут: {raw_profit:+.2f}{currency} | "
+                f"Реален P&L: {real_pnl_usd:+.2f}{currency} ({real_pnl_pct:+.2f}%) | "
+                f"[{outcome}]"
             )
 
     def _sync_positions(self, mt5_positions):
@@ -408,6 +409,42 @@ class TradingBot:
         if ml_stats:
             logger.info(f"  WinRate:  {ml_stats.get('win_rate', 0):.1%} ({ml_stats.get('total_trades', 0)} сделки)")
         logger.info("=" * 50)
+
+    def _cap_volume_to_risk(self, symbol: str, volume: float,
+                             sl: float, entry: float, account: Dict) -> Optional[float]:
+        """Намалява лота ако реалният долларов риск > balance × RISK_PERCENT.
+        Връща None ако дори мин. лот надвишава лимита."""
+        balance = account.get("balance", 1000.0)
+        max_risk_usd = balance * (self.settings.RISK_PERCENT / 100.0)
+        sl_distance = abs(entry - sl)
+        if sl_distance == 0:
+            return volume
+
+        risk_per_lot = 0.0
+        if self.mt5._mt5:
+            sym_info = self.mt5._mt5.symbol_info(symbol)
+            if sym_info and sym_info.trade_tick_size > 0:
+                risk_per_lot = (sl_distance / sym_info.trade_tick_size) * sym_info.trade_tick_value
+        if risk_per_lot <= 0:
+            pip = get_pip(symbol)
+            risk_per_lot = (sl_distance / pip) * 1.0
+
+        real_risk = risk_per_lot * volume
+        if real_risk <= max_risk_usd:
+            return volume
+
+        max_vol = math.floor((max_risk_usd / risk_per_lot) * 100) / 100
+        if max_vol < self.settings.MIN_LOT_SIZE:
+            logger.info(
+                f"⚠️ {symbol}: Риск {real_risk:.2f}$ > лимит {max_risk_usd:.2f}$. Отваряне с мин. лот {self.settings.MIN_LOT_SIZE}."
+            )
+            return self.settings.MIN_LOT_SIZE
+
+        logger.info(
+            f"⚖️ {symbol}: Лот {volume} → {max_vol} "
+            f"(Риск: {real_risk:.2f}$ → {max_vol * risk_per_lot:.2f}$ / Лимит: {max_risk_usd:.2f}$)"
+        )
+        return max_vol
 
     def run_backtest(self, date_from: str, date_to: str):
         logger.info(f"Backtest {date_from} -> {date_to}")

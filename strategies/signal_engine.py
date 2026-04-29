@@ -65,14 +65,14 @@ class SignalEngine:
                 atr_ratio = current_atr / avg_atr
 
                 if atr_ratio > s.ATR_MAX_MULTIPLIER:
-                    # logger.warning(f"⚠️ {symbol:8} HIGH VOLATILITY | Ratio: {atr_ratio:.2f}x | Trading Paused")
+                    logger.info(f"⚠️ {symbol:8} HIGH VOL | Ratio: {atr_ratio:.2f}x (max {s.ATR_MAX_MULTIPLIER}x)")
                     return TradeSignal(
                         symbol=symbol, direction="NEUTRAL", score=0, confidence=0,
                         entry_price=current_price, stop_loss=current_price, take_profit=current_price, risk_reward=0
                     )
 
                 if atr_ratio < s.ATR_MIN_MULTIPLIER:
-                    # logger.info(f"💤 {symbol:8} LOW VOLATILITY  | Ratio: {atr_ratio:.2f}x | Waiting for movement")
+                    logger.info(f"💤 {symbol:8} LOW VOL  | Ratio: {atr_ratio:.2f}x (min {s.ATR_MIN_MULTIPLIER}x)")
                     return TradeSignal(
                         symbol=symbol, direction="NEUTRAL", score=0, confidence=0,
                         entry_price=current_price, stop_loss=current_price, take_profit=current_price, risk_reward=0
@@ -193,58 +193,35 @@ class SignalEngine:
         bos_icon   = ""
         choch_icon = ""
         eq_icon    = ""
-        smc_blocked = False
 
-        # BOS Gate: потвърждава tentative посоката или блокира при противоречие
+        # BOS Бонус: само потвърждава tentative посоката (не блокира)
         if ms.bos_direction == "BULLISH":
             if tentative == "BUY":
                 b_score += 20
                 bos_icon = "📈 BOS↑"
-            elif tentative == "SELL":
-                smc_blocked = True
-                bos_icon = "🚫BOS↑"
         elif ms.bos_direction == "BEARISH":
             if tentative == "SELL":
                 s_score += 20
                 bos_icon = "📉 BOS↓"
-            elif tentative == "BUY":
-                smc_blocked = True
-                bos_icon = "🚫BOS↓"
 
-        # CHOCH Gate: по-силен от BOS — може да отмени блок от BOS ако потвърждава
+        # CHOCH Бонус: по-силен от BOS (не блокира)
         if ms.choch_detected:
-            if ms.choch_direction == "BULLISH":
-                if tentative == "BUY":
-                    b_score += 25
-                    smc_blocked = False   # CHOCH потвърждава → отменя BOS блок
-                    choch_icon = "🔄 CHOCH↑"
-                elif tentative == "SELL":
-                    smc_blocked = True
-                    choch_icon = "🚫CHOCH↑"
-            elif ms.choch_direction == "BEARISH":
-                if tentative == "SELL":
-                    s_score += 25
-                    smc_blocked = False
-                    choch_icon = "🔄 CHOCH↓"
-                elif tentative == "BUY":
-                    smc_blocked = True
-                    choch_icon = "🚫CHOCH↓"
+            if ms.choch_direction == "BULLISH" and tentative == "BUY":
+                b_score += 25
+                choch_icon = "🔄 CHOCH↑"
+            elif ms.choch_direction == "BEARISH" and tentative == "SELL":
+                s_score += 25
+                choch_icon = "🔄 CHOCH↓"
 
-        # EQL Gate: ликвидностни нива потвърждават или блокират
+        # EQL Бонус: само потвърждава (не блокира)
         if eq.price_swept_eq_low or eq.price_broke_eq_high:
             if tentative == "BUY":
                 b_score += 15
                 eq_icon = "💧EQL↑" if eq.price_swept_eq_low else "🚀EQH↑"
-            elif tentative == "SELL":
-                smc_blocked = True
-                eq_icon = "🚫EQL↑"
         elif eq.price_swept_eq_high or eq.price_broke_eq_low:
             if tentative == "SELL":
                 s_score += 15
                 eq_icon = "💧EQH↓" if eq.price_swept_eq_high else "🔻EQL↓"
-            elif tentative == "BUY":
-                smc_blocked = True
-                eq_icon = "🚫EQH↓"
 
         # ── СТЪПКА 3: Финална посока ─────────────────────────────────────
         total_possible = b_score + s_score
@@ -257,16 +234,6 @@ class SignalEngine:
         final_score = max(b_score, s_score)
         direction   = "WAIT"
         reason_str  = ""
-
-        # Ако SMC е блокирал → директно NEUTRAL
-        if smc_blocked:
-            smc_tag = " ".join(filter(None, [bos_icon, choch_icon, eq_icon]))
-            logger.info(f"🚫 {symbol:8} | SMC БЛОК [{smc_tag}] | Tentative: {tentative}")
-            return TradeSignal(
-                symbol=symbol, direction="NEUTRAL", score=0, confidence=0,
-                entry_price=current_price, stop_loss=current_price,
-                take_profit=current_price, risk_reward=0, reasoning="SMC Block"
-            )
 
         if b_pct > s_pct and b_pct >= 60 and final_score >= s.MIN_SIGNAL_SCORE:
             direction  = "BUY"

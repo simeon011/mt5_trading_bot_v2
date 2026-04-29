@@ -5,6 +5,9 @@ core/mt5_connector.py — MT5 връзка и изпълнение на поръ
 """
 
 import logging
+import time
+
+import mt5
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
@@ -261,23 +264,29 @@ class MT5Connector:
 
     def get_deal_exit_price(self, ticket: int) -> Optional[float]:
         """Търси реалната цена на затваряне в историята с изчакване."""
-        import MetaTrader5 as mt5
-        import time
-        from datetime import datetime, timedelta
+        info = self.get_deal_info(ticket)
+        return info["price"] if info else None
 
-        if self._mt5 is None: return None
+    def get_deal_info(self, ticket: int) -> Optional[Dict]:
+        """Връща цена и пълен MT5 P&L (profit + commission + swap)."""
+        if self._mt5 is None:
+            return None
 
-        # Опитваме в продължение на 5 секунди (през 1 сек)
-        for attempt in range(5):
-            from_date = datetime.now() - timedelta(hours=4)
+        mt5 = self._mt5
+        for attempt in range(10):
+            from_date = datetime.now() - timedelta(hours=24)
             deals = mt5.history_deals_get(from_date, datetime.now())
-
             if deals:
                 for d in deals:
                     if d.position_id == ticket and d.entry == mt5.DEAL_ENTRY_OUT:
-                        return float(d.price)
-
-            time.sleep(1.0)
+                        return {
+                            "price":      float(d.price),
+                            "profit":     float(d.profit),
+                            "commission": float(d.commission),
+                            "swap":       float(d.swap),
+                            "net":        float(d.profit + d.commission + d.swap)
+                        }
+            time.sleep(1.0 if attempt < 5 else 2.0)
 
         return None
 

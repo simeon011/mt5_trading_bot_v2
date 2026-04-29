@@ -11,12 +11,20 @@ ml/learning_agent.py — Самообучаващ се ML агент (FIXED)
 import os
 import json
 import pickle
+import logging
 import numpy as np
 import pandas as pd
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass, asdict
-import logging
+
+try:
+    from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+    from sklearn.model_selection import cross_val_score
+    from sklearn.preprocessing import StandardScaler
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
 
 logger = logging.getLogger("LearningAgent")
 
@@ -144,79 +152,57 @@ class LearningAgent:
     # ── Обучение ─────────────────────────────────────────────
 
     def train(self) -> Dict:
-        """Обучава Random Forest модел от историята на сделките."""
         if len(self.trade_history) < self.s.ML_MIN_TRADES_TO_TRAIN:
-            logger.info(f"Нужни са {self.s.ML_MIN_TRADES_TO_TRAIN} сделки. "
-                        f"Имаме {len(self.trade_history)}.")
+            logger.info(f"Need {self.s.ML_MIN_TRADES_TO_TRAIN} trades. Have {len(self.trade_history)}.")
+            return {}
+
+        if not SKLEARN_AVAILABLE:
+            logger.error("sklearn not installed. pip install scikit-learn")
             return {}
 
         try:
-            from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-            from sklearn.model_selection import cross_val_score
-            from sklearn.preprocessing import StandardScaler
-        except ImportError:
-            logger.error("sklearn не е инсталиран. pip install scikit-learn")
+            filtered = [t for t in self.trade_history if t.outcome != "BREAKEVEN"]
+            X = np.array([t.to_feature_vector() for t in filtered])
+            y = np.array([1 if t.outcome == "WIN" else 0 for t in filtered])
+
+            if len(np.unique(y)) < 2:
+                logger.warning("Need both WIN and LOSS trades for training.")
+                return {}
+
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+
+            rf = RandomForestClassifier(n_estimators=200, max_depth=6,
+                                        min_samples_leaf=3, class_weight="balanced", random_state=42)
+            gb = GradientBoostingClassifier(n_estimators=100, max_depth=4,
+                                            learning_rate=0.05, random_state=42)
+            rf.fit(X_scaled, y)
+            gb.fit(X_scaled, y)
+
+            rf_cv = cross_val_score(rf, X_scaled, y, cv=min(5, len(y)//5+1), scoring="accuracy")
+            self.model = {"rf": rf, "gb": gb, "scaler": scaler}
+
+            with open(self.model_path, "wb") as f:
+                pickle.dump(self.model, f)
+
+            feature_names = ["RSI", "MACD", "MA_Align", "OB", "Candle",
+                             "Trendline", "Total_Score", "Hour", "DayOfWeek", "Direction"]
+            importance_dict = dict(zip(feature_names, rf.feature_importances_))
+            win_rate = y.mean()
+            metrics = {
+                "accuracy": float(rf_cv.mean()),
+                "win_rate": float(win_rate),
+                "total_trades": len(self.trade_history),
+                "feature_importance": {k: round(float(v), 3)
+                                       for k, v in sorted(importance_dict.items(),
+                                                           key=lambda x: x[1], reverse=True)}
+            }
+            logger.info(f"Model trained | Accuracy: {metrics['accuracy']:.1%} | "
+                        f"Win Rate: {win_rate:.1%} | Trades: {len(y)}")
+            return metrics
+        except Exception as e:
+            logger.error(f"Training failed: {e}")
             return {}
-
-        X = np.array([t.to_feature_vector() for t in self.trade_history])
-        # ✅ Правилна WIN/LOSS логика
-        y = np.array([1 if t.outcome == "WIN" else 0 for t in self.trade_history])
-
-        if len(np.unique(y)) < 2:
-            logger.warning("Нужни са и WIN и LOSS сделки за обучение.")
-            return {}
-
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
-
-        # Ensemble от 2 модела
-        rf = RandomForestClassifier(
-            n_estimators=200,
-            max_depth=6,
-            min_samples_leaf=3,
-            class_weight="balanced",
-            random_state=42
-        )
-        gb = GradientBoostingClassifier(
-            n_estimators=100,
-            max_depth=4,
-            learning_rate=0.05,
-            random_state=42
-        )
-
-        rf.fit(X_scaled, y)
-        gb.fit(X_scaled, y)
-
-        # Cross-validation
-        rf_cv = cross_val_score(rf, X_scaled, y, cv=min(5, len(y)//5+1), scoring="accuracy")
-
-        self.model = {"rf": rf, "gb": gb, "scaler": scaler}
-
-        with open(self.model_path, "wb") as f:
-            pickle.dump(self.model, f)
-
-        # Feature importance
-        feature_names = ["RSI", "MACD", "MA_Align", "OB", "Candle",
-                         "Trendline", "Total_Score", "Hour", "DayOfWeek", "Direction"]
-        importances = rf.feature_importances_
-        importance_dict = dict(zip(feature_names, importances))
-
-        win_rate = y.mean()
-        metrics = {
-            "accuracy": float(rf_cv.mean()),
-            "win_rate": float(win_rate),
-            "total_trades": len(self.trade_history),
-            "feature_importance": {k: round(float(v), 3)
-                                   for k, v in sorted(importance_dict.items(),
-                                                       key=lambda x: x[1], reverse=True)}
-        }
-
-        logger.info(f"✅ Модел обучен | Accuracy: {metrics['accuracy']:.1%} | "
-                    f"Win Rate: {win_rate:.1%} | Сделки: {len(y)}")
-        logger.info(f"Топ фактори: {list(metrics['feature_importance'].items())[:3]}")
-
-        return metrics
-
     # ── Предсказване ─────────────────────────────────────────
 
     def predict(self, features: Dict) -> float:
