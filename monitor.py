@@ -10,10 +10,13 @@ import glob
 import requests
 from datetime import datetime, timedelta
 from collections import deque
+from dotenv import load_dotenv
 
-# ── Telegram Config ──────────────────────────────────────────
-TOKEN   = "8777799026:AAHjCPhnxsgMJt_jFchM1iIx8Oi4e7WJxkw"
-CHAT_ID = "1876241717"
+load_dotenv()
+
+# ── Telegram Config (от .env) ────────────────────────────────
+TOKEN   = os.getenv("TELEGRAM_TOKEN", "")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
 # ── Settings ─────────────────────────────────────────────────
 LOG_DIR              = "logs"

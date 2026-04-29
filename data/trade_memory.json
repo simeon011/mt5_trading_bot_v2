@@ -1471,6 +1471,52 @@
       "market_hour": 14,
       "day_of_week": 2,
       "timestamp": "2026-04-29T14:36:39.000463"
+    },
+    {
+      "id": "cb10dbe7-daa6-48bf-9f39-3f75a978154c",
+      "symbol": "EURUSD+",
+      "direction": "BUY",
+      "entry_price": 1.17086,
+      "exit_price": 1.17035,
+      "sl": 1.17037,
+      "tp": 1.1716,
+      "profit_pips": -5.1000000000001044,
+      "profit_pct": -1.296633303002753,
+      "outcome": "LOSS",
+      "duration_hours": 1.0,
+      "rsi_at_entry": 65.70621448766703,
+      "macd_hist_at_entry": 0.0001173256903911463,
+      "ma_alignment": 1.0,
+      "ob_score": 4.142388831857009,
+      "candle_score": 0.00034000000000000696,
+      "trendline_score": 0.0,
+      "total_score": 115,
+      "market_hour": 14,
+      "day_of_week": 2,
+      "timestamp": "2026-04-29T14:44:02.323690"
+    },
+    {
+      "id": "707610b6-b00f-4b6d-8d27-bab6e5a854d0",
+      "symbol": "EURUSD+",
+      "direction": "SELL",
+      "entry_price": 1.17065,
+      "exit_price": 1.17049,
+      "sl": 1.17114,
+      "tp": 1.16991,
+      "profit_pips": 1.5999999999993797,
+      "profit_pct": 0.22660321776555165,
+      "outcome": "BREAKEVEN",
+      "duration_hours": 1.0,
+      "rsi_at_entry": 61.27303207111415,
+      "macd_hist_at_entry": 0.00010392398098936277,
+      "ma_alignment": 1.0,
+      "ob_score": 4.142388831857009,
+      "candle_score": 0.00012999999999996348,
+      "trendline_score": 0.0,
+      "total_score": 60,
+      "market_hour": 14,
+      "day_of_week": 2,
+      "timestamp": "2026-04-29T14:46:04.146405"
     }
   ],
   "pattern_memory": {
@@ -1566,8 +1612,13 @@
     },
     "EURUSD+_BUY_ob4_candle0": {
       "wins": 1,
+      "losses": 2,
+      "total_profit": -0.4639883400839854
+    },
+    "EURUSD+_SELL_ob4_candle0": {
+      "wins": 0,
       "losses": 1,
-      "total_profit": 0.8326449629187677
+      "total_profit": 0.22660321776555165
     }
   }
 }

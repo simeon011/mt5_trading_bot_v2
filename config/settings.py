@@ -8,18 +8,20 @@ import os
 import math
 from dataclasses import dataclass, field
 from typing import List
+from dotenv import load_dotenv
 
-# Динамично намиране на главната папка на проекта
+# Зарежда .env файла от главната папка на проекта
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 @dataclass
 class Settings:
 
     # ── MT5 Връзка ──────────────────────────────────────────
-    MT5_LOGIN: int = 25080519
-    MT5_PASSWORD: str = "!g&H2rUT"
-    MT5_SERVER: str = "VantageInternational-Demo"
-    MT5_PATH: str = r"C:\Program Files\MetaTrader 5\terminal64.exe"
+    MT5_LOGIN: int = int(os.getenv("MT5_LOGIN", "0"))
+    MT5_PASSWORD: str = os.getenv("MT5_PASSWORD", "")
+    MT5_SERVER: str = os.getenv("MT5_SERVER", "")
+    MT5_PATH: str = os.getenv("MT5_PATH", r"C:\Program Files\MetaTrader 5\terminal64.exe")
 
     # ── Символи ─────────────────────────────────────────────
     SYMBOLS: List[str] = field(default_factory=lambda: [
@@ -103,9 +105,9 @@ class Settings:
     CYCLE_INTERVAL_SECONDS: int = 15  # Проверява на всеки 15 сек!
     CANDLE_HISTORY: int = 200
 
-    # ── Telegram (опционално) ───────────────────────────────
-    TELEGRAM_TOKEN: str = ""
-    TELEGRAM_CHAT_ID: str = ""
+    # ── Telegram (от .env) ──────────────────────────────────
+    TELEGRAM_TOKEN: str = os.getenv("TELEGRAM_TOKEN", "")
+    TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", "")
 
     # ── Пътища ──────────────────────────────────────────────
     DATA_DIR: str = "data"

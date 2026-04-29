@@ -1,0 +1,19 @@
+# Чувствителни данни — НИКОГА да не се качват в Git
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.venv/
+
+# Bot данни и модели
+data/
+models/
+logs/
+
+# IDE
+.idea/
+.vscode/
+*.iml

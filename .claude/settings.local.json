@@ -4,7 +4,10 @@
       "Bash(python -c ' *)",
       "Bash(python -m py_compile core/bot.py)",
       "Bash(python -m py_compile ml/learning_agent.py)",
-      "Bash(python -m py_compile core/mt5_connector.py)"
+      "Bash(python -m py_compile core/mt5_connector.py)",
+      "Bash(venv\\\\Scripts\\\\pip show *)",
+      "Bash(python -c \"import dotenv; print\\('OK'\\)\")",
+      "Bash(pip install *)"
     ]
   }
 }
