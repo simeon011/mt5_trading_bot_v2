@@ -1,5 +1,5 @@
 """
-PhantomTrader Monitor — Telegram alerting agent
+Kairos Monitor — Telegram alerting agent
 Runs alongside the bot and watches the log file for issues.
 """
 
@@ -71,7 +71,7 @@ def tail_file(path: str, last_pos: int) -> tuple:
         return [], last_pos
 
 
-class PhantomMonitor:
+class KairosMonitor:
 
     def __init__(self):
         self.last_pos           = 0
@@ -90,7 +90,7 @@ class PhantomMonitor:
         self.last_update_id     = 0
 
         register_commands()
-        send("👻 <b>PhantomTrader Monitor стартиран!</b>\nНаблюдавам бота в реално време...\n\nНапиши / за да видиш командите.")
+        send("👻 <b>Kairos Monitor стартиран!</b>\nНаблюдавам бота в реално време...\n\nНапиши / за да видиш командите.")
         print(f"[{datetime.now():%H:%M:%S}] Monitor started. Watching logs...")
 
     def run(self):
@@ -119,7 +119,7 @@ class PhantomMonitor:
                     self._send_stats()
                 elif text == "/help":
                     send(
-                        "👻 <b>PhantomTrader — Команди</b>\n\n"
+                        "👻 <b>Kairos — Команди</b>\n\n"
                         "/stats — Дневна статистика и баланс\n"
                         "/help — Този списък"
                     )
@@ -134,7 +134,7 @@ class PhantomMonitor:
         balance_str = f"{self.current_balance:.2f}$" if self.current_balance > 0 else "N/A"
 
         send(
-            f"👻 <b>PhantomTrader — Дневна статистика</b>\n\n"
+            f"👻 <b>Kairos — Дневна статистика</b>\n\n"
             f"💰 Баланс: <b>{balance_str}</b>\n"
             f"📊 Сделки днес: <b>{self.trade_count}</b>\n"
             f"✅ Победи: <b>{self.wins}</b>\n"
@@ -173,7 +173,7 @@ class PhantomMonitor:
         # Проверка за замразен бот
         silence = (datetime.now() - self.last_log_time).total_seconds() / 60
         if silence >= MAX_SILENCE_MINUTES:
-            send(f"🔴 <b>PhantomTrader не отговаря!</b>\nНяма активност от {silence:.0f} минути.")
+            send(f"🔴 <b>Kairos не отговаря!</b>\nНяма активност от {silence:.0f} минути.")
             self.last_log_time = datetime.now()  # Reset за да не спамим
 
     def _process_line(self, line: str):
@@ -191,7 +191,7 @@ class PhantomMonitor:
         if "Трейдинг спрян" in line or "trading_halted" in line.lower():
             if not self.bot_halted:
                 self.bot_halted = True
-                send(f"🛑 <b>PhantomTrader е СПРЯН!</b>\n<code>{line[-150:]}</code>")
+                send(f"🛑 <b>Kairos е СПРЯН!</b>\n<code>{line[-150:]}</code>")
 
         # ── Дневен reset → бот продължава ────────────────────
         if "Дневен риск reset" in line:
@@ -217,8 +217,8 @@ class PhantomMonitor:
 
         # ── Затворена сделка ──────────────────────────────────
         if ("✅ Затворена" in line or "❌ Затворена" in line or "⚪ Затворена" in line):
-            gross_m = re.search(r"Брут: ([+-][\d.]+)", line)
-            pips_m  = re.search(r"Пипсове: ([+-][\d.]+)", line)
+            gross_m = re.search(r"Брут: ([+-]?[\d.]+)", line)
+            pips_m  = re.search(r"Пипсове: ([+-]?[\d.]+)", line)
             sym_m   = re.search(r"Затворена: (\S+)", line)
 
             gross = float(gross_m.group(1)) if gross_m else 0.0
@@ -259,5 +259,5 @@ class PhantomMonitor:
 
 
 if __name__ == "__main__":
-    monitor = PhantomMonitor()
+    monitor = KairosMonitor()
     monitor.run()

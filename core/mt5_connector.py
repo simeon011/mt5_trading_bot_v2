@@ -135,9 +135,11 @@ class MT5Connector:
                     sl: float, tp: float, comment: str = "AI_BOT") -> Optional[Dict]:
         """Изпраща поръчка към MT5 с валидация."""
         if self._mt5 is None:
+            sim_price = (sl + tp) / 2  # приближена симулирана цена
             logger.info(f"📋 [СИМУЛАЦИЯ] {order_type} {volume} {symbol} | SL:{sl:.5f} TP:{tp:.5f}")
             return {"ticket": np.random.randint(100000, 999999), "symbol": symbol,
-                    "type": order_type, "volume": volume, "sl": sl, "tp": tp, "price_open": 0}
+                    "type": order_type, "volume": volume, "sl": sl, "tp": tp,
+                    "price_open": sim_price}  # fix: не 0
 
         mt5 = self._mt5
         tick = mt5.symbol_info_tick(symbol)

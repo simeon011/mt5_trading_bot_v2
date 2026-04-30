@@ -95,7 +95,8 @@ class TechnicalIndicators:
         gain = delta.clip(lower=0).ewm(com=period - 1, adjust=False).mean()
         loss = (-delta.clip(upper=0)).ewm(com=period - 1, adjust=False).mean()
         rs = gain / loss.replace(0, np.nan)
-        return 100 - (100 / (1 + rs))
+        rsi = 100 - (100 / (1 + rs))
+        return rsi.fillna(100)   # loss=0 → никакви загуби → RSI=100 (overbought)
 
     @staticmethod
     def macd(series: pd.Series, fast: int = 12, slow: int = 26,
@@ -275,6 +276,8 @@ class TechnicalIndicators:
             return None
 
         channel_height = res_price - sup_price
+        if channel_height < 1e-8:   # твърде тесен канал → безсмислено
+            return None
         position = (current_price - sup_price) / channel_height
 
         return {

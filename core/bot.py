@@ -46,7 +46,7 @@ class TradingBot:
 
     def run_cycle(self):
         self._cycle_count += 1
-        logger.cycle(
+        (logger.cycle if hasattr(logger, 'cycle') else logger.info)(
             f"–––––––––––––––Цикъл #{self._cycle_count} "
             f"[{datetime.now().strftime('%H:%M:%S')}]–––––––––––––––"
         )
@@ -200,8 +200,8 @@ class TradingBot:
 
                 target_pips  = abs(pos["tp"] - pos["price_open"])
                 current_pips = abs(current_price - pos["price_open"])
-                tp1_pips     = target_pips / 2 if target_pips > 0 else 0
-                progress_pct = (current_pips / tp1_pips * 100) if tp1_pips > 0 else 0
+                # fix: progress спрямо пълния TP, не половината
+                progress_pct = (current_pips / target_pips * 100) if target_pips > 0 else 0
 
                 # ── ПРАВИЛО 1: BE+2 (45% към TP1) ────────────────────────
                 if 45 <= progress_pct < 100:
@@ -398,14 +398,27 @@ class TradingBot:
         candle_size = abs(current_price - open_p)
         candle_score_val = min(15.0, (candle_size / atr_val * 15) if atr_val > 0 else 5.0)
 
+        # Приблизителен total_score от основните индикатори (за predict())
+        # Бонусите от SMC/Volume не са известни тук; signal.score се записва при затваряне
+        _b, _s = 0, 0
+        if rsi_val < 40:       _b += 20
+        elif rsi_val > 60:     _s += 20
+        _mh = float(macd_hist.iloc[-1])
+        if _mh > 0:            _b += 15
+        elif _mh < 0:          _s += 15
+        if ma_f > ma_s:        _b += 25
+        else:                  _s += 25
+        _b += ob_score_val + candle_score_val + tl_score_val
+        total_score_approx = min(100.0, float(max(_b, _s)))
+
         return {
             "rsi":           rsi_val,
-            "macd_hist":     float(macd_hist.iloc[-1]),
+            "macd_hist":     _mh,
             "ma_alignment":  1.0 if ma_f > ma_s else 0.0,
             "ob_score":      ob_score_val,
             "candle_score":  candle_score_val,
             "trendline_score": tl_score_val,
-            "total_score":   50,
+            "total_score":   total_score_approx,
             "hour":          datetime.now().hour,
             "day_of_week":   datetime.now().weekday(),
             "direction":     "BUY" if ma_f > ma_s else "SELL"

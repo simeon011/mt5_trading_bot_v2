@@ -62,7 +62,7 @@ class TradeRecord:
             self.rsi_at_entry / 100,
             self.macd_hist_at_entry,
             self.ma_alignment,
-            self.ob_score / 20,
+            self.ob_score / 15,   # fix: max стойност е ~15, не 20
             self.candle_score / 15,
             self.trendline_score / 15,
             self.total_score / 100,
@@ -131,7 +131,7 @@ class LearningAgent:
         if n >= self.s.ML_MIN_TRADES_TO_TRAIN:
             if (n - self.last_retrain_count) >= self.s.ML_RETRAIN_INTERVAL:
                 logger.info(f"{'='*60}")
-                logger.self_study(f"🔄 ПРЕОБУЧАВАНЕ НА ML МОДЕЛ")
+                (logger.self_study if hasattr(logger, 'self_study') else logger.info)(f"🔄 ПРЕОБУЧАВАНЕ НА ML МОДЕЛ")
                 logger.info(f"   Сделки за обучение: {n}")
                 logger.info(f"   Последно преобучаване беше при: {self.last_retrain_count}")
                 logger.info(f"   Разлика: {n - self.last_retrain_count} сделки")
@@ -142,7 +142,7 @@ class LearningAgent:
                 self._save_memory()   # Задължително при преобучаване
 
                 if metrics:
-                    logger.new_model(f"✅ МОДЕЛ ПРЕОБУЧЕН УСПЕШНО")
+                    (logger.new_model if hasattr(logger, 'new_model') else logger.info)(f"✅ МОДЕЛ ПРЕОБУЧЕН УСПЕШНО")
                     logger.info(f"   Accuracy: {metrics.get('accuracy', 0):.1%}")
                     logger.info(f"   Win Rate: {metrics.get('win_rate', 0):.1%}")
                     logger.info(f"   Топ фактори: {list(metrics.get('feature_importance', {}).items())[:3]}")
@@ -224,7 +224,7 @@ class LearningAgent:
             features.get("rsi", 50) / 100,
             features.get("macd_hist", 0),
             features.get("ma_alignment", 0),
-            features.get("ob_score", 0) / 20,
+            features.get("ob_score", 0) / 15,  # fix: съответства на to_feature_vector
             features.get("candle_score", 0) / 15,
             features.get("trendline_score", 0) / 15,
             features.get("total_score", 50) / 100,
@@ -321,14 +321,16 @@ class LearningAgent:
         else:
             best_tp_mult = 1.5
 
-        logger.info(
-            f"🎲 Лот: {volume} | Опит:{n_trades} ({exp_mult:.1f}x) | "
-            f"WR:{recent_wr*100:.0f}% ({wr_mult:.1f}x) | "
-            f"ML:{confidence*100:.0f}% ({conf_mult:.1f}x) | "
-            f"Сесия:{hour}ч ({session_mult:.1f}x)"
-            if recent else
-            f"🎲 Лот: {volume} | Опит:{n_trades} (новак)"
-        )
+        # fix: recent_wr се изчислява предварително за да не се крешне в f-string
+        if recent:
+            logger.info(
+                f"🎲 Лот: {volume} | Опит:{n_trades} ({exp_mult:.1f}x) | "
+                f"WR:{recent_wr*100:.0f}% ({wr_mult:.1f}x) | "
+                f"ML:{confidence*100:.0f}% ({conf_mult:.1f}x) | "
+                f"Сесия:{hour}ч ({session_mult:.1f}x)"
+            )
+        else:
+            logger.info(f"🎲 Лот: {volume} | Опит:{n_trades} (новак)")
 
         return {
             "volume": volume,

@@ -25,7 +25,7 @@ class Settings:
 
     # ── Символи ─────────────────────────────────────────────
     SYMBOLS: List[str] = field(default_factory=lambda: [
-        # "XAUUSD+",  # Gold
+        "XAUUSD+",  # Gold
         "EURUSD+",  # Forex
         "GBPUSD+",  # Forex
         "USDJPY+",  # Forex
@@ -34,7 +34,7 @@ class Settings:
         "EURGBP+",  # Forex
         "USDCAD+",  # Forex
         # "SP500",  # S&P 500 Index
-        # "JPN225ft",  # JPN index
+        "JPN225ft",  # JPN index
         # "NAS100",  # NASDAQ Index
     ])
 
@@ -90,7 +90,7 @@ class Settings:
     # ✅ Когато достигнем 40% от TP/SL → местим SL на entry
     USE_TRAILING_STOP: bool = True          # Включен trailing stop
     TRAILING_STOP_ATR_MULT: float = 1.5     # Разстояние = ATR * 1.5
-    TRAILING_STOP_PROFIT_THRESHOLD: float = 0.4  # 40% прогрес към TP
+    TRAILING_STOP_PROFIT_THRESHOLD: float = 0.45  # 40% прогрес към TP
 
     # ── Order Blocks ─────────────────────────────────────────
     OB_LOOKBACK: int = 20

@@ -126,7 +126,10 @@ class SignalEngine:
                 s_score += 15
 
         # ── 📊 АНАЛИЗ НА ОБЕМА (VOLUME SPIKE) ──
-        vol_ratio = float(ind.volume_spike(df_primary, period=20))
+        try:
+            vol_ratio = float(ind.volume_spike(df_primary, period=20))
+        except (TypeError, ValueError):
+            vol_ratio = 1.0  # fix: guard срещу None или Series
 
         # Ако обемът е с поне 50% по-голям от нормалното (ratio > 1.5)
         if vol_ratio > 1.5:
@@ -195,34 +198,36 @@ class SignalEngine:
         choch_icon = ""
         eq_icon    = ""
 
-        # BOS Бонус: само потвърждава tentative посоката (не блокира)
-        if ms.bos_direction == "BULLISH":
-            if tentative == "BUY":
-                b_score += 20
-                bos_icon = "📈 BOS↑"
-        elif ms.bos_direction == "BEARISH":
-            if tentative == "SELL":
-                s_score += 20
-                bos_icon = "📉 BOS↓"
+        if ms is not None:
+            # BOS Бонус: само потвърждава tentative посоката (не блокира)
+            if ms.bos_direction == "BULLISH":
+                if tentative == "BUY":
+                    b_score += 20
+                    bos_icon = "📈 BOS↑"
+            elif ms.bos_direction == "BEARISH":
+                if tentative == "SELL":
+                    s_score += 20
+                    bos_icon = "📉 BOS↓"
 
-        # CHOCH Бонус: по-силен от BOS (не блокира)
-        if ms.choch_detected:
-            if ms.choch_direction == "BULLISH" and tentative == "BUY":
-                b_score += 25
-                choch_icon = "🔄 CHOCH↑"
-            elif ms.choch_direction == "BEARISH" and tentative == "SELL":
-                s_score += 25
-                choch_icon = "🔄 CHOCH↓"
+            # CHOCH Бонус: по-силен от BOS (не блокира)
+            if ms.choch_detected:
+                if ms.choch_direction == "BULLISH" and tentative == "BUY":
+                    b_score += 25
+                    choch_icon = "🔄 CHOCH↑"
+                elif ms.choch_direction == "BEARISH" and tentative == "SELL":
+                    s_score += 25
+                    choch_icon = "🔄 CHOCH↓"
 
-        # EQL Бонус: само потвърждава (не блокира)
-        if eq.price_swept_eq_low or eq.price_broke_eq_high:
-            if tentative == "BUY":
-                b_score += 15
-                eq_icon = "💧EQL↑" if eq.price_swept_eq_low else "🚀EQH↑"
-        elif eq.price_swept_eq_high or eq.price_broke_eq_low:
-            if tentative == "SELL":
-                s_score += 15
-                eq_icon = "💧EQH↓" if eq.price_swept_eq_high else "🔻EQL↓"
+        if eq is not None:
+            # EQL Бонус: само потвърждава (не блокира)
+            if eq.price_swept_eq_low or eq.price_broke_eq_high:
+                if tentative == "BUY":
+                    b_score += 15
+                    eq_icon = "💧EQL↑" if eq.price_swept_eq_low else "🚀EQH↑"
+            elif eq.price_swept_eq_high or eq.price_broke_eq_low:
+                if tentative == "SELL":
+                    s_score += 15
+                    eq_icon = "💧EQH↓" if eq.price_swept_eq_high else "🔻EQL↓"
 
         # ── СТЪПКА 3: Финална посока ─────────────────────────────────────
         total_possible = b_score + s_score

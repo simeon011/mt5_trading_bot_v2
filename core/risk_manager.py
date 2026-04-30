@@ -66,6 +66,11 @@ class RiskManager:
         balance = account_info.get("balance", 0)
         self.reset_daily_if_needed(balance)
 
+        # Fallback: ако reset е стартирал с balance=0, взимаме сегашния
+        if self.state.start_balance <= 0 and balance > 0:
+            self.state.start_balance = balance
+            logger.warning(f"⚠️ start_balance беше 0, прехвърлен на {balance:.2f}")
+
         if self.state.trading_halted:
             return False, f"Трейдинг спрян: {self.state.halt_reason}"
 

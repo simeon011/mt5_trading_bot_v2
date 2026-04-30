@@ -7,7 +7,9 @@
       "Bash(python -m py_compile core/mt5_connector.py)",
       "Bash(venv\\\\Scripts\\\\pip show *)",
       "Bash(python -c \"import dotenv; print\\('OK'\\)\")",
-      "Bash(pip install *)"
+      "Bash(pip install *)",
+      "Bash(venv\\\\Scripts\\\\pip install *)",
+      "PowerShell(cmd /c \"copy /Y C:\\\\Users\\\\35988\\\\Desktop\\\\ToDo\\\\mt5_trading_bot_v2\\\\PhantomTrader_Vision.mq5 C:\\\\Users\\\\35988\\\\AppData\\\\Roaming\\\\MetaQuotes\\\\Terminal\\\\D0E8209F77C8CF37AD8BF550E51FF075\\\\MQL5\\\\Indicators\\\\PhantomTrader_Vision.mq5\")"
     ]
   }
 }
